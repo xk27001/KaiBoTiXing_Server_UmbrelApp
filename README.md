@@ -26,14 +26,15 @@
 
 ## 数据库配置
 
-数据库连接信息位于 `src/main/resources/config/db.properties`（已加入 `.gitignore`，请勿提交）：
+数据库连接信息位于 `src/main/resources/config/db.properties`（已加入 `.gitignore`，**请勿把真实账号密码提交到仓库**）。
+该文件需自行创建，字段如下（占位符仅示意，请替换为实际值）：
 
 ```properties
-db.host=rm-bp12b19ygmdkv3d4fwo.mysql.rds.aliyuncs.com
+db.host=<你的 MySQL 地址，例如 rm-xxxxxxxxxxxx.mysql.rds.aliyuncs.com>
 db.port=3306
 db.database=kai_bo_ti_xing
-db.username=xk27001
-db.password=xk270001XK_
+db.username=<数据库用户名>
+db.password=<数据库密码>
 ```
 
 程序首次启动时会自动创建数据库（若不存在）和四张表：
