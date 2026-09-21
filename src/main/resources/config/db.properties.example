@@ -1,0 +1,15 @@
+# 复制为 db.properties 后按实际环境修改。
+# 容器/Umbrel 部署不需要此文件，可直接使用 KBTX_* 环境变量覆盖。
+
+db.host=127.0.0.1
+db.port=3306
+db.database=kai_bo_ti_xing
+db.username=kaibotixing
+db.password=change-me
+db.params=useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+db.auto.create=true
+
+# 无界面 Web 服务端
+server.listen=0.0.0.0
+server.port=8080
+server.monitor.auto-start=true

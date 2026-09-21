@@ -16,6 +16,7 @@ import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.awt.GraphicsEnvironment;
 import java.net.URL;
 
 /**
@@ -34,51 +35,58 @@ public class AlertService {
      * 下方为放大的「确认」按钮。
      */
     public void alert(String nickname, String roomId) {
-        Platform.runLater(() -> {
-            Dialog<ButtonType> dialog = new Dialog<>();
-            dialog.setTitle("开播提醒");
-            dialog.setHeaderText(null);
+        // 无图形环境的服务端（Umbrel/Docker）只记录事件，不尝试初始化 JavaFX。
+        if (GraphicsEnvironment.isHeadless()) {
+            log.info("开播提醒（无图形界面）: {} {}", nickname,
+                    roomId == null || roomId.isBlank() ? "" : "(" + roomId + ")");
+            return;
+        }
 
-            // 内容：两行文字
-            Label nameLabel = new Label(nickname == null ? "" : nickname);
-            nameLabel.setStyle("-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: black;");
-
-            Label msgLabel = new Label((roomId == null || roomId.isBlank() ? "" : roomId) + "直播间开播了");
-            msgLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: black;");
-
-            VBox content = new VBox(10, nameLabel, msgLabel);
-            content.setAlignment(Pos.CENTER_LEFT);
-            content.setPadding(new Insets(15));
-
-            DialogPane pane = dialog.getDialogPane();
-            pane.setContent(content);
-            // 红色背景
-            pane.setStyle("-fx-background-color: #e74c3c; -fx-background: #e74c3c;");
-
-            // 放大的「确认」按钮
-            ButtonType confirm = new ButtonType("确认", ButtonBar.ButtonData.OK_DONE);
-            pane.getButtonTypes().add(confirm);
-
-            // 提醒弹窗图标
-            AppIcon.apply(dialog);
-
-            dialog.show();
-
-            // 弹窗置顶显示
-            if (pane.getScene() != null && pane.getScene().getWindow() instanceof Stage stage) {
-                stage.setAlwaysOnTop(true);
-                stage.toFront();
-            }
-
-            // 放大确认按钮（必须在 dialog.show() 后 lookup）
-            Button okBtn = (Button) pane.lookupButton(confirm);
-            if (okBtn != null) {
-                okBtn.setPrefSize(120, 48);
-                okBtn.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-background-color: white; -fx-text-fill: #e74c3c;");
-            }
-        });
+        try {
+            Platform.runLater(() -> showAlertDialog(nickname, roomId));
+        } catch (IllegalStateException e) {
+            log.warn("JavaFX 尚未初始化，跳过桌面提醒: {}", e.getMessage());
+            return;
+        }
 
         playSound();
+    }
+
+    private void showAlertDialog(String nickname, String roomId) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("开播提醒");
+        dialog.setHeaderText(null);
+
+        Label nameLabel = new Label(nickname == null ? "" : nickname);
+        nameLabel.setStyle("-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: black;");
+
+        Label msgLabel = new Label((roomId == null || roomId.isBlank() ? "" : roomId) + "直播间开播了");
+        msgLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: black;");
+
+        VBox content = new VBox(10, nameLabel, msgLabel);
+        content.setAlignment(Pos.CENTER_LEFT);
+        content.setPadding(new Insets(15));
+
+        DialogPane pane = dialog.getDialogPane();
+        pane.setContent(content);
+        pane.setStyle("-fx-background-color: #e74c3c; -fx-background: #e74c3c;");
+
+        ButtonType confirm = new ButtonType("确认", ButtonBar.ButtonData.OK_DONE);
+        pane.getButtonTypes().add(confirm);
+
+        AppIcon.apply(dialog);
+        dialog.show();
+
+        if (pane.getScene() != null && pane.getScene().getWindow() instanceof Stage stage) {
+            stage.setAlwaysOnTop(true);
+            stage.toFront();
+        }
+
+        Button okBtn = (Button) pane.lookupButton(confirm);
+        if (okBtn != null) {
+            okBtn.setPrefSize(120, 48);
+            okBtn.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-background-color: white; -fx-text-fill: #e74c3c;");
+        }
     }
 
     private synchronized void playSound() {

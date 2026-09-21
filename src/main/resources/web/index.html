@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#d94841">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css">
+  <title>KaiBoTiXing 开播监控</title>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div class="brand">
+        <img src="/icon.svg" alt="" width="48" height="48">
+        <div>
+          <p class="eyebrow">UMBREL SERVER</p>
+          <h1>抖音主播开播监控</h1>
+        </div>
+      </div>
+      <div class="hero-actions">
+        <span id="monitor-state" class="pill pill-off">已停止</span>
+        <button id="btn-start" class="button button-primary" type="button">启动监控</button>
+        <button id="btn-stop" class="button button-ghost" type="button">停止监控</button>
+        <button id="btn-settings" class="button button-ghost" type="button">设置</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="stats" aria-label="运行概览">
+        <article class="stat-card">
+          <span>主播总数</span>
+          <strong id="stat-anchors">--</strong>
+        </article>
+        <article class="stat-card stat-live">
+          <span>正在直播</span>
+          <strong id="stat-live">--</strong>
+        </article>
+        <article class="stat-card">
+          <span>启用监控</span>
+          <strong id="stat-enabled">--</strong>
+        </article>
+        <article class="stat-card">
+          <span>代理池</span>
+          <strong id="stat-proxy">--</strong>
+          <small id="stat-proxy-detail">初始化中</small>
+        </article>
+      </section>
+
+      <nav class="tabs" aria-label="功能导航">
+        <button class="tab active" data-tab="status" type="button">监控状态</button>
+        <button class="tab" data-tab="anchors" type="button">主播管理</button>
+        <button class="tab" data-tab="sessions" type="button">开播记录</button>
+        <button class="tab" data-tab="logs" type="button">日志</button>
+        <button class="tab" data-tab="proxy" type="button">代理池</button>
+      </nav>
+
+      <section id="panel-status" class="panel active">
+        <div class="panel-bar">
+          <div>
+            <h2>实时状态</h2>
+            <p>监控运行后每 5 秒自动刷新。</p>
+          </div>
+          <button id="btn-refresh-status" class="button button-ghost" type="button">立即刷新</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>状态</th><th>主播</th><th>抖音号</th><th>房间号</th><th>最近检测</th></tr></thead>
+            <tbody id="status-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="panel-anchors" class="panel">
+        <div class="panel-bar">
+          <div>
+            <h2>主播管理</h2>
+            <p>至少填写昵称和抖音号；房间号可显著降低反爬失败率。</p>
+          </div>
+          <button id="btn-add-anchor" class="button button-primary" type="button">新增主播</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>昵称</th><th>抖音号</th><th>房间号</th><th>备注</th><th>启用</th><th>操作</th></tr></thead>
+            <tbody id="anchors-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="panel-sessions" class="panel">
+        <div class="panel-bar">
+          <div>
+            <h2>开播记录</h2>
+            <p>记录最近 200 次开播会话。</p>
+          </div>
+          <button id="btn-refresh-sessions" class="button button-ghost" type="button">刷新</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>主播</th><th>开播时间</th><th>关播时间</th><th>时长</th></tr></thead>
+            <tbody id="sessions-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="panel-logs" class="panel">
+        <div class="panel-bar">
+          <div>
+            <h2>运行日志</h2>
+            <p>数据库日志最多显示最近 200 条。</p>
+          </div>
+          <div class="button-row">
+            <button id="btn-refresh-logs" class="button button-ghost" type="button">刷新</button>
+            <button id="btn-clear-logs" class="button button-danger" type="button">清空</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>时间</th><th>级别</th><th>来源</th><th>内容</th></tr></thead>
+            <tbody id="logs-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="panel-proxy" class="panel">
+        <div class="panel-bar">
+          <div>
+            <h2>代理池</h2>
+            <p id="proxy-summary">等待状态信息...</p>
+          </div>
+          <button id="btn-refresh-proxy" class="button button-primary" type="button">立即刷新</button>
+        </div>
+        <div class="proxy-grid">
+          <article class="subpanel">
+            <h3>处理事件</h3>
+            <ol id="proxy-events" class="event-list"></ol>
+          </article>
+          <article class="subpanel">
+            <h3>可用代理</h3>
+            <div id="proxy-list" class="proxy-list"></div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="anchor-dialog" class="dialog">
+    <form id="anchor-form" method="dialog">
+      <div class="dialog-head">
+        <h2 id="anchor-dialog-title">新增主播</h2>
+        <button class="icon-button" value="cancel" formnovalidate type="button" data-close-dialog>×</button>
+      </div>
+      <input id="anchor-id" type="hidden">
+      <label>主播昵称 <span class="required">*</span>
+        <input id="anchor-nickname" maxlength="100" required autocomplete="off">
+      </label>
+      <label>抖音号 / 主页标识 <span class="required">*</span>
+        <input id="anchor-douyin-id" maxlength="100" required autocomplete="off" placeholder="例如：example_user">
+      </label>
+      <label>直播间房间号
+        <input id="anchor-web-rid" maxlength="100" autocomplete="off" placeholder="live.douyin.com/ 后面的数字">
+      </label>
+      <label>主页 URL
+        <input id="anchor-home-url" maxlength="500" autocomplete="off" placeholder="https://www.douyin.com/user/...">
+      </label>
+      <label>备注
+        <textarea id="anchor-remark" maxlength="500" rows="3"></textarea>
+      </label>
+      <label class="check-row"><input id="anchor-enabled" type="checkbox" checked> 启用监控</label>
+      <div class="dialog-actions">
+        <button class="button button-ghost" type="button" data-close-dialog>取消</button>
+        <button class="button button-primary" type="submit">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog" class="dialog">
+    <form id="settings-form" method="dialog">
+      <div class="dialog-head">
+        <h2>监控设置</h2>
+        <button class="icon-button" value="cancel" formnovalidate type="button" data-close-dialog>×</button>
+      </div>
+      <label>监控间隔（秒）
+        <input id="setting-interval" type="number" min="5" max="86400" required>
+      </label>
+      <label class="check-row"><input id="setting-alert" type="checkbox"> 记录开播提醒事件</label>
+      <label class="check-row"><input id="setting-log" type="checkbox"> 写入数据库日志</label>
+      <p class="hint">修改运行中的监控间隔后，调度器会自动重启并立即生效。</p>
+      <div class="dialog-actions">
+        <button class="button button-ghost" type="button" data-close-dialog>取消</button>
+        <button class="button button-primary" type="submit">保存设置</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

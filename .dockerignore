@@ -1,0 +1,10 @@
+.git
+.idea
+.codebuddy
+dist
+logs
+target
+*.log
+*.exe
+*.msi
+kaibotixing-server/data

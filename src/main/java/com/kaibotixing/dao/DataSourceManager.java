@@ -33,7 +33,9 @@ public final class DataSourceManager {
     }
 
     private static void init() {
-        ensureDatabaseExists();
+        if (ConfigUtil.getBoolean("db.auto.create", true)) {
+            ensureDatabaseExists();
+        }
 
         HikariConfig config = new HikariConfig();
         config.setJdbcUrl(buildJdbcUrl());

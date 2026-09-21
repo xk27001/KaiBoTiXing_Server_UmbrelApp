@@ -5,7 +5,7 @@
 ## 技术栈
 
 - Java 25（OpenJDK 25.0.3 LTS）
-- JavaFX 23.0.2（GUI）
+- JavaFX 23.0.2（桌面 GUI）+ JDK HttpServer（Umbrel Web 控制台）
 - MySQL（阿里云 RDS）+ HikariCP 连接池 + 纯 JDBC
 - Jackson（JSON 解析）、SLF4J + Logback（日志）
 - `ScheduledExecutorService` + 线程池（多线程并发爬取）
@@ -78,6 +78,82 @@ powershell -ExecutionPolicy Bypass -File package-exe.ps1 -App client # 仅客户
 
 两个目录均为免安装绿色版，双击对应 exe 运行（内置 JRE，无需目标机器预装 Java）。两个程序各自单实例运行（重复启动只会激活已有主窗体，不会出现第二个窗口），窗口、弹窗与托盘图标统一。
 
+## Umbrel 部署（社区应用商店）
+
+> 从发布镜像、创建 GitHub 镜像仓库、添加社区商店到首次使用和排错，请直接按照 [`UMBREL_INSTALL.md`](UMBREL_INSTALL.md) 操作。
+
+仓库已转换为 Umbrel 社区应用商店结构，并新增无界面 Web 服务端：
+
+```text
+umbrel-app-store.yml                 # Umbrel 社区应用商店清单
+kaibotixing-server/
+├── umbrel-app.yml                   # 应用商店展示信息
+├── docker-compose.yml               # Web 服务端 + MySQL 8
+├── Dockerfile                       # Linux/Umbrel 镜像
+└── icon.svg                         # 应用图标
+.github/workflows/umbrel-image.yml   # 构建并推送 GHCR 镜像
+```
+
+服务端通过 `com.kaibotixing.server.ServerLauncher` 启动，不再依赖桌面环境。Web 控制台提供监控启停、主播管理、实时状态、开播记录、日志和代理池状态。
+
+### 1. 发布镜像
+
+Umbrel 安装应用时会拉取预构建镜像，因此首次安装前必须先发布 `kai-bo-ti-xing` 镜像。默认镜像名为：
+
+```text
+ghcr.io/xk27001/kai-bo-ti-xing:1.0.0-umbrel
+```
+
+当前已配置为 GitHub 用户 `xk27001`。如需使用其他用户名，请同步修改 `kaibotixing-server/docker-compose.yml` 中的 `image`。推送到 GitHub 后，可手动运行仓库的 **Build Umbrel image** workflow，或在能访问 Docker 的机器上执行：
+
+```bash
+docker build -f kaibotixing-server/Dockerfile -t ghcr.io/<owner>/kai-bo-ti-xing:1.0.0-umbrel .
+docker push ghcr.io/<owner>/kai-bo-ti-xing:1.0.0-umbrel
+```
+
+> 首次推送后，请在 GitHub 的 Packages 页面把 `kai-bo-ti-xing` 容器包可见性设为 **Public**，否则 Umbrel 无法匿名拉取镜像。
+
+### 2. Gitee 与 GitHub 的关系
+
+Gitee **不能直接替代** Umbrel 社区应用商店所需的 GitHub 仓库地址。umbrelOS 的 **Community App Stores** 通过 GitHub 仓库和 GitHub API 拉取商店清单，因此 Gitee 地址不能被直接添加为社区商店。
+
+推荐的组合方式：
+
+- **Gitee**：作为主源码仓库，保存完整 Java 项目、文档和 Dockerfile。
+- **GitHub**：建立一个公开镜像仓库，至少同步 `umbrel-app-store.yml` 和 `kaibotixing-server/` 清单目录，只用于 Umbrel 安装。
+- **镜像仓库**：可继续使用 GHCR；如果不想依赖 GitHub，也可以把镜像发布到 Docker Hub，然后修改 Compose 中的 `image`。
+- **仅使用 Gitee**：仍可通过 SSH 在 Umbrel 主机手动运行 Docker Compose，但不会出现在 umbrelOS 应用商店中，也没有一键安装和升级集成。
+
+### 3. 添加社区应用商店
+
+请在 umbrelOS 的 **App Store → Community App Stores** 中添加 GitHub 镜像仓库地址：
+
+```text
+https://github.com/xk27001/KaiBoTiXing_Server_UmbrelApp
+```
+
+添加成功后，在商店中安装「开播监控」。Umbrel 会自动创建 MySQL 8、持久化数据库和日志，并通过 umbrelOS 登录保护 Web 控制台。
+
+### 4. 服务端配置
+
+容器部署无需创建 `db.properties`，可直接使用 `KBTX_*` 环境变量覆盖配置，例如：
+
+| 环境变量 | 说明 | Umbrel 默认值 |
+|---|---|---|
+| `KBTX_DB_HOST` | MySQL 8 主机 | `kaibotixing-server_db_1` |
+| `KBTX_DB_DATABASE` | 数据库名 | `kai_bo_ti_xing` |
+| `KBTX_DB_USERNAME` | 数据库用户 | `kaibotixing` |
+| `KBTX_DB_PASSWORD` | 数据库密码 | `$APP_PASSWORD` |
+| `KBTX_SERVER_PORT` | Web 服务端口 | `8080` |
+| `KBTX_SERVER_MONITOR_AUTO_START` | 启动时自动开启监控 | `true` |
+| `KBTX_CRAWLER_PROXY_ENABLED` | 启用免费代理池 | `true` |
+
+本地直接运行无界面服务端：
+
+```bash
+java -cp target/KaiBoTiXing-1.0.0-fat.jar com.kaibotixing.server.ServerLauncher
+```
+
 ## 项目结构
 
 ```
@@ -90,7 +166,8 @@ src/main/java/com/kaibotixing/
 ├── crawler/                   # 爬取器（DouyinCrawler 接口 + DouyinWebCrawler 实现 + UserAgentProvider + ProxyPoolService 代理池）
 ├── scheduler/                 # 监控调度器（MonitorScheduler）
 ├── util/                      # 工具类
-└── ui/                        # 界面控制器（MainController）
+├── ui/                        # JavaFX 桌面界面控制器（MainController）
+└── server/                    # Umbrel 无界面 Web 服务端（ServerLauncher + WebServer）
 ```
 
 ## 使用说明

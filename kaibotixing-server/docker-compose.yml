@@ -1,0 +1,55 @@
+version: "3.7"
+
+services:
+  app_proxy:
+    environment:
+      APP_HOST: kaibotixing-server_app_1
+      APP_PORT: 8080
+      PROXY_AUTH_ADD: "true"
+
+  app:
+    image: ghcr.io/xk27001/kai-bo-ti-xing:1.0.0-umbrel
+    init: true
+    restart: on-failure
+    user: "1000:1000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      KBTX_SERVER_LISTEN: 0.0.0.0
+      KBTX_SERVER_PORT: "8080"
+      KBTX_SERVER_MONITOR_AUTO_START: "true"
+      KBTX_CONSOLE_CHARSET: UTF-8
+      KBTX_DB_HOST: kaibotixing-server_db_1
+      KBTX_DB_PORT: "3306"
+      KBTX_DB_DATABASE: kai_bo_ti_xing
+      KBTX_DB_USERNAME: kaibotixing
+      KBTX_DB_PASSWORD: $APP_PASSWORD
+      KBTX_DB_PARAMS: useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+      KBTX_DB_AUTO_CREATE: "false"
+      KBTX_CRAWLER_PROXY_ENABLED: "true"
+    volumes:
+      - ${APP_DATA_DIR}/data/logs:/app/logs
+
+  db:
+    image: mysql:8.4
+    init: true
+    restart: on-failure
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_DATABASE: kai_bo_ti_xing
+      MYSQL_USER: kaibotixing
+      MYSQL_PASSWORD: $APP_PASSWORD
+      MYSQL_ROOT_PASSWORD: $APP_PASSWORD
+    volumes:
+      - ${APP_DATA_DIR}/data/db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      start_period: 30s
+      timeout: 5s
+      retries: 10
