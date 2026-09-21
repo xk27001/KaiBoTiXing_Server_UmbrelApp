@@ -1,12 +1,21 @@
 # 抖音主播开播监控软件
 
-基于 JavaFX 的抖音主播开播监控桌面软件，采用多线程每 30 秒并发爬取主播直播状态，数据持久化到 MySQL，支持主播管理、实时状态展示、日志查看、启停控制，并在检测到开播时弹窗 + 声音提醒。
+[![CI](https://github.com/xk27001/KaiBoTiXing_Server_UmbrelApp/actions/workflows/ci.yml/badge.svg)](https://github.com/xk27001/KaiBoTiXing_Server_UmbrelApp/actions/workflows/ci.yml)
+[![Build Umbrel image](https://github.com/xk27001/KaiBoTiXing_Server_UmbrelApp/actions/workflows/umbrel-image.yml/badge.svg)](https://github.com/xk27001/KaiBoTiXing_Server_UmbrelApp/actions/workflows/umbrel-image.yml)
+![Java 25](https://img.shields.io/badge/Java-25-orange)
+![Umbrel](https://img.shields.io/badge/Umbrel-Community%20App-red)
+
+基于 JavaFX 的抖音主播开播监控项目，同时支持 Windows 桌面端和 Umbrel/Docker Web 服务端。程序按设定间隔并发爬取主播直播状态，数据持久化到 MySQL 8，支持主播管理、实时状态展示、开播记录、日志查看、监控启停和代理池管理。
+
+- GitHub 仓库：<https://github.com/xk27001/KaiBoTiXing_Server_UmbrelApp>
+- Umbrel 完整安装文档：[UMBREL_INSTALL.md](UMBREL_INSTALL.md)
+- Gitee 主源码仓库：<https://gitee.com/ren-daguo/kai-bo-ti-xing>
 
 ## 技术栈
 
 - Java 25（OpenJDK 25.0.3 LTS）
 - JavaFX 23.0.2（桌面 GUI）+ JDK HttpServer（Umbrel Web 控制台）
-- MySQL（阿里云 RDS）+ HikariCP 连接池 + 纯 JDBC
+- MySQL 8.0/8.4 + HikariCP 连接池 + 纯 JDBC
 - Jackson（JSON 解析）、SLF4J + Logback（日志）
 - `ScheduledExecutorService` + 线程池（多线程并发爬取）
 - Maven + shade + jlink + jpackage（构建与打包）
@@ -22,7 +31,8 @@
 | 开播提醒 | 检测到主播由未开播变为开播时，弹出通知窗口并播放提示音 |
 | 反爬应对 | 每次请求随机 User-Agent；免费代理池（多源拉取→并发验证→随机轮换，503/失败自动换代理重试） |
 | 代理池详情 | 点击顶部「代理池详情」按钮打开独立窗口，实时查看拉取/验证处理过程、验证进度与可用代理列表，支持手动立即刷新 |
-| 数据持久化 | 主播、配置、爬取结果、日志全部存入 MySQL |
+| 数据持久化 | 主播、配置、开播会话和日志全部存入 MySQL 8 |
+| Umbrel 部署 | 社区应用商店一键安装，或通过 Gitee + SSH 使用独立 Compose 部署 |
 
 ## 数据库配置
 
