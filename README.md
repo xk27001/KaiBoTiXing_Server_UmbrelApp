@@ -111,14 +111,14 @@ kaibotixing-server/
 Umbrel 安装应用时会拉取预构建镜像，因此首次安装前必须先发布 `kai-bo-ti-xing` 镜像。默认镜像名为：
 
 ```text
-ghcr.io/xk27001/kai-bo-ti-xing:1.0.1-umbrel
+ghcr.io/xk27001/kai-bo-ti-xing:1.0.2-umbrel
 ```
 
 当前已配置为 GitHub 用户 `xk27001`。如需使用其他用户名，请同步修改 `kaibotixing-server/docker-compose.yml` 中的 `image`。推送到 GitHub 后，可手动运行仓库的 **Build Umbrel image** workflow，或在能访问 Docker 的机器上执行：
 
 ```bash
-docker build -f kaibotixing-server/Dockerfile -t ghcr.io/<owner>/kai-bo-ti-xing:1.0.1-umbrel .
-docker push ghcr.io/<owner>/kai-bo-ti-xing:1.0.1-umbrel
+docker build -f kaibotixing-server/Dockerfile -t ghcr.io/<owner>/kai-bo-ti-xing:1.0.2-umbrel .
+docker push ghcr.io/<owner>/kai-bo-ti-xing:1.0.2-umbrel
 ```
 
 > 首次推送后，请在 GitHub 的 Packages 页面把 `kai-bo-ti-xing` 容器包可见性设为 **Public**，否则 Umbrel 无法匿名拉取镜像。

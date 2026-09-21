@@ -35,6 +35,7 @@ import java.util.regex.Pattern;
 public final class WebServer implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(WebServer.class);
+    private static final String APP_VERSION = "1.0.2-umbrel";
     private static final int MAX_BODY_BYTES = 1024 * 1024;
     private static final Pattern ANCHOR_PATH = Pattern.compile("^/api/anchors/(\\d+)$");
 
@@ -75,7 +76,7 @@ public final class WebServer implements AutoCloseable {
 
             if ("/api/health".equals(path)) {
                 requireMethod(exchange, "GET");
-                sendJson(exchange, 200, Map.of("status", "ok", "version", "1.0.0-umbrel"));
+                sendJson(exchange, 200, Map.of("status", "ok", "version", APP_VERSION));
             } else if ("/api/overview".equals(path)) {
                 requireMethod(exchange, "GET");
                 sendJson(exchange, 200, overview());
@@ -344,8 +345,9 @@ public final class WebServer implements AutoCloseable {
         }
 
         exchange.getResponseHeaders().set("Content-Type", contentType(path));
-        exchange.getResponseHeaders().set("Cache-Control",
-                "/index.html".equals(path) ? "no-cache" : "public, max-age=3600");
+        exchange.getResponseHeaders().set("Cache-Control", "no-store, no-cache, must-revalidate");
+        exchange.getResponseHeaders().set("Pragma", "no-cache");
+        exchange.getResponseHeaders().set("Expires", "0");
         exchange.sendResponseHeaders(200, "HEAD".equalsIgnoreCase(method) ? -1 : content.length);
         if (!"HEAD".equalsIgnoreCase(method)) {
             try (OutputStream out = exchange.getResponseBody()) {
