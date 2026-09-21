@@ -199,7 +199,8 @@ public final class WebServer implements AutoCloseable {
             int interval = requiredInt(body, "monitorIntervalSeconds", 5, 86_400);
             boolean alert = requiredBoolean(body, "alertEnabled");
             boolean log = requiredBoolean(body, "logEnabled");
-            runtime.saveSettings(interval, alert, log);
+            int sampleCount = requiredInt(body, "proxyValidateSampleCount", 1, 10_000);
+            runtime.saveSettings(interval, alert, log, sampleCount);
             sendJson(exchange, 200, runtime.settingsSnapshot());
             return;
         }

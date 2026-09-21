@@ -9,6 +9,9 @@ db.password=change-me
 db.params=useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
 db.auto.create=true
 
+# 代理池每轮采样验证条数（网页设置会持久化到 monitor_config）
+crawler.proxy.validate.sample.count=250
+
 # 无界面 Web 服务端
 server.listen=0.0.0.0
 server.port=8080

@@ -83,8 +83,8 @@ public class ProxyPoolService {
     private final String validateUrl;
     private final String validateUrlBackup;
     private final int maxCount;
-    /** 验证采样倍数：每轮最多验证 maxCount × sampleFactor 条候选，未验证的下轮刷新补充 */
-    private final int sampleFactor;
+    /** 每轮实际采样验证的候选条数，可由 Web 控制台持久化配置 */
+    private volatile int validateSampleCount;
     private final int parallelism;
     private final int fetchTimeoutSeconds;
     private final int requestTimeoutSeconds;
@@ -128,7 +128,10 @@ public class ProxyPoolService {
         this.validateUrl = ConfigUtil.get("crawler.proxy.validate.url", DEFAULT_VALIDATE_URL);
         this.validateUrlBackup = toHttp(this.validateUrl);
         this.maxCount = Math.max(1, ConfigUtil.getInt("crawler.proxy.max.count", 50));
-        this.sampleFactor = Math.max(1, ConfigUtil.getInt("crawler.proxy.validate.sample.factor", 5));
+        int sampleFactor = Math.max(1, ConfigUtil.getInt("crawler.proxy.validate.sample.factor", 5));
+        int defaultSampleCount = maxCount * sampleFactor;
+        this.validateSampleCount = clampSampleCount(
+                ConfigUtil.getInt("crawler.proxy.validate.sample.count", defaultSampleCount));
         this.parallelism = Math.max(1, ConfigUtil.getInt("crawler.proxy.validate.parallelism", 40));
         this.requestTimeoutSeconds = Math.max(3, ConfigUtil.getInt("crawler.timeout.seconds", 10));
         this.fetchTimeoutSeconds = 15;
@@ -138,6 +141,19 @@ public class ProxyPoolService {
                 .build();
     }
 
+    /** 当前每轮采样验证条数。 */
+    public int getValidateSampleCount() {
+        return validateSampleCount;
+    }
+
+    /** 更新每轮采样验证条数（1-10000）。 */
+    public void setValidateSampleCount(int count) {
+        this.validateSampleCount = clampSampleCount(count);
+    }
+
+    private static int clampSampleCount(int count) {
+        return Math.max(1, Math.min(count, 10_000));
+    }
     /** 逗号分隔字符串 -> 去空格列表 */
     private static List<String> parseList(String raw) {
         List<String> list = new ArrayList<>();
@@ -238,13 +254,12 @@ public class ProxyPoolService {
                         InetSocketAddress.createUnresolved(hp[0], Integer.parseInt(hp[1]))));
             }
 
-            // 候选通常数千条，全部验证需数十分钟；随机打乱后仅采样验证 maxCount × sampleFactor 条，
-            // 数十秒内即可得到可用代理，未验证的候选下轮刷新自动重新拉取补充。
+            // 候选通常数千条，全部验证需数十分钟；随机打乱后按配置条数采样验证。
             Collections.shuffle(candidates);
-            int validateLimit = Math.min(candidates.size(), maxCount * sampleFactor);
+            int sampleCount = validateSampleCount;
+            int validateLimit = Math.min(candidates.size(), sampleCount);
             if (candidates.size() > validateLimit) {
-                log.info("候选代理 {} 条，采样验证其中 {} 条（max.count={} × sample.factor={}）",
-                        candidates.size(), validateLimit, maxCount, sampleFactor);
+                log.info("候选代理 {} 条，按配置采样验证其中 {} 条", candidates.size(), validateLimit);
                 addEvent("候选 %d 条，采样验证其中 %d 条（并发 %d，超时 %d 秒）",
                         candidates.size(), validateLimit, parallelism, validateTimeoutSeconds);
             }

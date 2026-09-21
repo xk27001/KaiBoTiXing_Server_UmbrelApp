@@ -44,6 +44,7 @@ public final class ServerRuntime implements AutoCloseable {
     private volatile boolean alertEnabled = true;
     private volatile boolean logEnabled = true;
     private volatile int monitorIntervalSeconds = 30;
+    private volatile int proxyValidateSampleCount = 250;
 
     public ServerRuntime() throws SQLException {
         scheduler = new MonitorScheduler(new DouyinWebCrawler(proxyPool), logService, alertService);
@@ -69,8 +70,12 @@ public final class ServerRuntime implements AutoCloseable {
                 config.get("monitor.interval.seconds"), 30, 5, 86_400);
         alertEnabled = enabled(config.get("alert.enabled"), true);
         logEnabled = enabled(config.get("log.enabled"), true);
+        proxyValidateSampleCount = parsePositiveInt(
+                config.get("crawler.proxy.validate.sample.count"),
+                proxyPool.getValidateSampleCount(), 1, 10_000);
         scheduler.setAlertEnabled(alertEnabled);
         logService.setLogEnabled(logEnabled);
+        proxyPool.setValidateSampleCount(proxyValidateSampleCount);
     }
 
     public synchronized Map<String, Object> settingsSnapshot() {
@@ -78,24 +83,29 @@ public final class ServerRuntime implements AutoCloseable {
         settings.put("monitorIntervalSeconds", monitorIntervalSeconds);
         settings.put("alertEnabled", alertEnabled);
         settings.put("logEnabled", logEnabled);
+        settings.put("proxyValidateSampleCount", proxyValidateSampleCount);
         return settings;
     }
 
     /**
      * 保存 Web 控制台设置；若监控正在运行，则以新间隔重启调度器。
      */
-    public synchronized void saveSettings(int intervalSeconds, boolean alert, boolean logToDatabase)
-            throws SQLException {
+    public synchronized void saveSettings(int intervalSeconds, boolean alert, boolean logToDatabase,
+                                          int sampleCount) throws SQLException {
         int safeInterval = Math.max(5, Math.min(intervalSeconds, 86_400));
+        int safeSampleCount = Math.max(1, Math.min(sampleCount, 10_000));
         configDao.set("monitor.interval.seconds", Integer.toString(safeInterval));
         configDao.set("alert.enabled", alert ? "1" : "0");
         configDao.set("log.enabled", logToDatabase ? "1" : "0");
+        configDao.set("crawler.proxy.validate.sample.count", Integer.toString(safeSampleCount));
 
         monitorIntervalSeconds = safeInterval;
         alertEnabled = alert;
         logEnabled = logToDatabase;
+        proxyValidateSampleCount = safeSampleCount;
         scheduler.setAlertEnabled(alert);
         logService.setLogEnabled(logToDatabase);
+        proxyPool.setValidateSampleCount(safeSampleCount);
 
         if (scheduler.isRunning()) {
             scheduler.stop();

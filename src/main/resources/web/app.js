@@ -6,6 +6,12 @@ const state = {
   proxy: null,
   settings: null,
   monitorRunning: false,
+  selection: {
+    status: null,
+    anchors: null,
+    sessions: null,
+    logs: null,
+  },
 };
 
 async function api(path, options = {}) {
@@ -57,9 +63,26 @@ function formatDuration(session) {
 }
 
 function statusInfo(status) {
-  if (status === 'LIVE') return { className: 'status-live', label: '直播中' };
-  if (status === 'OFFLINE') return { className: 'status-offline', label: '未开播' };
-  return { className: 'status-unknown', label: '未知' };
+  if (status === 'LIVE') return { className: 'status-live', label: '直播中', order: 0 };
+  if (status === 'OFFLINE') return { className: 'status-offline', label: '未开播', order: 1 };
+  return { className: 'status-unknown', label: '未知', order: 2 };
+}
+
+function sortedStatusAnchors() {
+  return [...state.anchors].sort((left, right) => {
+    const orderDiff = statusInfo(left.lastStatus).order - statusInfo(right.lastStatus).order;
+    if (orderDiff !== 0) return orderDiff;
+    const nameDiff = String(left.nickname || '').localeCompare(String(right.nickname || ''), 'zh-CN');
+    return nameDiff !== 0 ? nameDiff : Number(left.id) - Number(right.id);
+  });
+}
+
+function rowClass(table, id) {
+  return String(state.selection[table]) === String(id) ? 'selected' : '';
+}
+
+function rowAttributes(table, id) {
+  return `data-row-table="${table}" data-row-id="${escapeHtml(id)}"`;
 }
 
 let toastTimer;
@@ -104,11 +127,12 @@ function renderOverview(overview) {
 function renderAnchors() {
   const body = $('#anchors-body');
   if (!state.anchors.length) {
-    body.innerHTML = emptyRow(6, '还没有主播，点击右上角新增。');
+    body.innerHTML = emptyRow(7, '还没有主播，点击右上角新增。');
     return;
   }
-  body.innerHTML = state.anchors.map((anchor) => `
-    <tr>
+  body.innerHTML = state.anchors.map((anchor, index) => `
+    <tr class="${rowClass('anchors', anchor.id)}" ${rowAttributes('anchors', anchor.id)}>
+      <td class="row-number">${index + 1}</td>
       <td><strong>${escapeHtml(anchor.nickname)}</strong></td>
       <td>${escapeHtml(anchor.douyinId)}</td>
       <td>${escapeHtml(anchor.webRid || '自动反查')}</td>
@@ -124,14 +148,16 @@ function renderAnchors() {
 
 function renderStatus() {
   const body = $('#status-body');
-  if (!state.anchors.length) {
-    body.innerHTML = emptyRow(5, '暂无主播。');
+  const anchors = sortedStatusAnchors();
+  if (!anchors.length) {
+    body.innerHTML = emptyRow(6, '暂无主播。');
     return;
   }
-  body.innerHTML = state.anchors.map((anchor) => {
+  body.innerHTML = anchors.map((anchor, index) => {
     const info = statusInfo(anchor.lastStatus);
     return `
-      <tr>
+      <tr class="${rowClass('status', anchor.id)}" ${rowAttributes('status', anchor.id)}>
+        <td class="row-number">${index + 1}</td>
         <td><span class="status-tag ${info.className}"><span class="status-dot"></span>${info.label}</span></td>
         <td><strong>${escapeHtml(anchor.nickname)}</strong></td>
         <td>${escapeHtml(anchor.douyinId)}</td>
@@ -145,11 +171,12 @@ function renderStatus() {
 function renderSessions() {
   const body = $('#sessions-body');
   if (!state.sessions.length) {
-    body.innerHTML = emptyRow(4, '暂无开播记录。');
+    body.innerHTML = emptyRow(5, '暂无开播记录。');
     return;
   }
-  body.innerHTML = state.sessions.map((session) => `
-    <tr>
+  body.innerHTML = state.sessions.map((session, index) => `
+    <tr class="${rowClass('sessions', session.id)}" ${rowAttributes('sessions', session.id)}>
+      <td class="row-number">${index + 1}</td>
       <td><strong>${escapeHtml(session.nickname || '未命名')}</strong></td>
       <td>${formatDate(session.startTime)}</td>
       <td>${session.endTime ? formatDate(session.endTime) : '<span class="status-live">直播中</span>'}</td>
@@ -161,11 +188,12 @@ function renderSessions() {
 function renderLogs() {
   const body = $('#logs-body');
   if (!state.logs.length) {
-    body.innerHTML = emptyRow(4, '暂无日志。');
+    body.innerHTML = emptyRow(5, '暂无日志。');
     return;
   }
-  body.innerHTML = state.logs.map((entry) => `
-    <tr>
+  body.innerHTML = state.logs.map((entry, index) => `
+    <tr class="${rowClass('logs', entry.id)}" ${rowAttributes('logs', entry.id)}>
+      <td class="row-number">${index + 1}</td>
       <td class="muted">${formatDate(entry.createTime)}</td>
       <td><span class="level level-${escapeHtml(entry.level)}">${escapeHtml(entry.level)}</span></td>
       <td>${escapeHtml(entry.source || '--')}</td>
@@ -176,8 +204,9 @@ function renderLogs() {
 
 function renderProxy(proxy) {
   state.proxy = proxy;
+  const sampleCount = state.settings?.proxyValidateSampleCount;
   const summary = proxy.enabled
-    ? `可用 ${proxy.available} 个，候选 ${proxy.candidateCount} 个${proxy.validationTotal ? `，验证 ${proxy.validationDone}/${proxy.validationTotal}` : ''}。`
+    ? `可用 ${proxy.available} 个，候选 ${proxy.candidateCount} 个${sampleCount ? `，每轮采样 ${sampleCount} 条` : ''}${proxy.validationTotal ? `，当前验证 ${proxy.validationDone}/${proxy.validationTotal}` : ''}。`
     : '代理池未启用，当前使用直连。';
   $('#proxy-summary').textContent = summary;
   $('#stat-proxy').textContent = proxy.enabled ? proxy.available : '未启用';
@@ -237,6 +266,7 @@ function openAnchorDialog(id = null) {
 function openSettingsDialog() {
   const settings = state.settings || {};
   $('#setting-interval').value = settings.monitorIntervalSeconds ?? 30;
+  $('#setting-proxy-sample-count').value = settings.proxyValidateSampleCount ?? 250;
   $('#setting-alert').checked = Boolean(settings.alertEnabled);
   $('#setting-log').checked = Boolean(settings.logEnabled);
   $('#settings-dialog').showModal();
@@ -255,6 +285,17 @@ function bindEvents() {
     button.addEventListener('click', () => button.closest('dialog').close());
   });
 
+  document.addEventListener('click', (event) => {
+    const row = event.target.closest('tr[data-row-table]');
+    if (!row || event.target.closest('button')) return;
+    const table = row.dataset.rowTable;
+    const id = row.dataset.rowId;
+    state.selection[table] = String(state.selection[table]) === String(id) ? null : id;
+    document.querySelectorAll(`tr[data-row-table="${table}"]`).forEach((item) => {
+      item.classList.toggle('selected', String(item.dataset.rowId) === String(state.selection[table]));
+    });
+  });
+
   $('#btn-start').addEventListener('click', async () => {
     try { await api('/api/monitor/start', { method: 'POST' }); setMonitorState(true); toast('监控已启动'); }
     catch (error) { toast(error.message, true); }
@@ -271,8 +312,13 @@ function bindEvents() {
 
   $('#btn-clear-logs').addEventListener('click', async () => {
     if (!confirm('确定清空数据库中的运行日志吗？')) return;
-    try { await api('/api/logs', { method: 'DELETE' }); state.logs = []; renderLogs(); toast('日志已清空'); }
-    catch (error) { toast(error.message, true); }
+    try {
+      await api('/api/logs', { method: 'DELETE' });
+      state.logs = [];
+      state.selection.logs = null;
+      renderLogs();
+      toast('日志已清空');
+    } catch (error) { toast(error.message, true); }
   });
 
   $('#btn-refresh-proxy').addEventListener('click', async () => {
@@ -322,6 +368,7 @@ function bindEvents() {
         method: 'PUT',
         body: {
           monitorIntervalSeconds: Number($('#setting-interval').value),
+          proxyValidateSampleCount: Number($('#setting-proxy-sample-count').value),
           alertEnabled: $('#setting-alert').checked,
           logEnabled: $('#setting-log').checked,
         },

@@ -65,7 +65,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>状态</th><th>主播</th><th>抖音号</th><th>房间号</th><th>最近检测</th></tr></thead>
+            <thead><tr><th class="row-number">#</th><th>状态</th><th>主播</th><th>抖音号</th><th>房间号</th><th>最近检测</th></tr></thead>
             <tbody id="status-body"></tbody>
           </table>
         </div>
@@ -81,7 +81,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>昵称</th><th>抖音号</th><th>房间号</th><th>备注</th><th>启用</th><th>操作</th></tr></thead>
+            <thead><tr><th class="row-number">#</th><th>昵称</th><th>抖音号</th><th>房间号</th><th>备注</th><th>启用</th><th>操作</th></tr></thead>
             <tbody id="anchors-body"></tbody>
           </table>
         </div>
@@ -97,7 +97,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>主播</th><th>开播时间</th><th>关播时间</th><th>时长</th></tr></thead>
+            <thead><tr><th class="row-number">#</th><th>主播</th><th>开播时间</th><th>关播时间</th><th>时长</th></tr></thead>
             <tbody id="sessions-body"></tbody>
           </table>
         </div>
@@ -116,7 +116,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>时间</th><th>级别</th><th>来源</th><th>内容</th></tr></thead>
+            <thead><tr><th class="row-number">#</th><th>时间</th><th>级别</th><th>来源</th><th>内容</th></tr></thead>
             <tbody id="logs-body"></tbody>
           </table>
         </div>
@@ -183,6 +183,10 @@
       <label>监控间隔（秒）
         <input id="setting-interval" type="number" min="5" max="86400" required>
       </label>
+      <label>代理池每轮采样验证条数
+        <input id="setting-proxy-sample-count" type="number" min="1" max="10000" required>
+      </label>
+      <p class="hint">数值越大，发现可用代理的概率越高，但每轮验证耗时也会增加。</p>
       <label class="check-row"><input id="setting-alert" type="checkbox"> 记录开播提醒事件</label>
       <label class="check-row"><input id="setting-log" type="checkbox"> 写入数据库日志</label>
       <p class="hint">修改运行中的监控间隔后，调度器会自动重启并立即生效。</p>
