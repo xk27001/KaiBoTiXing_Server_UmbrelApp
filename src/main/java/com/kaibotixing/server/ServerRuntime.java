@@ -45,6 +45,7 @@ public final class ServerRuntime implements AutoCloseable {
     private volatile boolean logEnabled = true;
     private volatile int monitorIntervalSeconds = 30;
     private volatile int proxyValidateSampleCount = 250;
+    private volatile int proxyValidateParallelism = 200;
 
     public ServerRuntime() throws SQLException {
         scheduler = new MonitorScheduler(new DouyinWebCrawler(proxyPool), logService, alertService);
@@ -75,7 +76,12 @@ public final class ServerRuntime implements AutoCloseable {
                 proxyPool.getValidateSampleCount(), 1, 10_000);
         scheduler.setAlertEnabled(alertEnabled);
         logService.setLogEnabled(logEnabled);
+        proxyValidateSampleCount = parsePositiveInt(
+                config.get("crawler.proxy.validate.sample.count"), proxyPool.getValidateSampleCount(), 1, 10_000);
+        proxyValidateParallelism = parsePositiveInt(
+                config.get("crawler.proxy.validate.parallelism"), proxyPool.getParallelism(), 1, 1_000);
         proxyPool.setValidateSampleCount(proxyValidateSampleCount);
+        proxyPool.setParallelism(proxyValidateParallelism);
     }
 
     public synchronized Map<String, Object> settingsSnapshot() {
@@ -84,6 +90,7 @@ public final class ServerRuntime implements AutoCloseable {
         settings.put("alertEnabled", alertEnabled);
         settings.put("logEnabled", logEnabled);
         settings.put("proxyValidateSampleCount", proxyValidateSampleCount);
+        settings.put("proxyValidateParallelism", proxyValidateParallelism);
         return settings;
     }
 
@@ -91,21 +98,25 @@ public final class ServerRuntime implements AutoCloseable {
      * 保存 Web 控制台设置；若监控正在运行，则以新间隔重启调度器。
      */
     public synchronized void saveSettings(int intervalSeconds, boolean alert, boolean logToDatabase,
-                                          int sampleCount) throws SQLException {
+                                          int sampleCount, int parallelism) throws SQLException {
         int safeInterval = Math.max(5, Math.min(intervalSeconds, 86_400));
         int safeSampleCount = Math.max(1, Math.min(sampleCount, 10_000));
+        int safeParallelism = Math.max(1, Math.min(parallelism, 1_000));
         configDao.set("monitor.interval.seconds", Integer.toString(safeInterval));
         configDao.set("alert.enabled", alert ? "1" : "0");
         configDao.set("log.enabled", logToDatabase ? "1" : "0");
         configDao.set("crawler.proxy.validate.sample.count", Integer.toString(safeSampleCount));
+        configDao.set("crawler.proxy.validate.parallelism", Integer.toString(safeParallelism));
 
         monitorIntervalSeconds = safeInterval;
         alertEnabled = alert;
         logEnabled = logToDatabase;
         proxyValidateSampleCount = safeSampleCount;
+        proxyValidateParallelism = safeParallelism;
         scheduler.setAlertEnabled(alert);
         logService.setLogEnabled(logToDatabase);
         proxyPool.setValidateSampleCount(safeSampleCount);
+        proxyPool.setParallelism(safeParallelism);
 
         if (scheduler.isRunning()) {
             scheduler.stop();

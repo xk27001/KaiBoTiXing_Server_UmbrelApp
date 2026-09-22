@@ -205,8 +205,9 @@ function renderLogs() {
 function renderProxy(proxy) {
   state.proxy = proxy;
   const sampleCount = state.settings?.proxyValidateSampleCount;
+  const parallelism = state.settings?.proxyValidateParallelism;
   const summary = proxy.enabled
-    ? `可用 ${proxy.available} 个，候选 ${proxy.candidateCount} 个${sampleCount ? `，每轮采样 ${sampleCount} 条` : ''}${proxy.validationTotal ? `，当前验证 ${proxy.validationDone}/${proxy.validationTotal}` : ''}。`
+    ? `可用 ${proxy.available} 个，候选 ${proxy.candidateCount} 个${sampleCount ? `，每轮采样 ${sampleCount} 条、并发 ${parallelism}` : ''}${proxy.validationTotal ? `，当前验证 ${proxy.validationDone}/${proxy.validationTotal}` : ''}。`
     : '代理池未启用，当前使用直连。';
   $('#proxy-summary').textContent = summary;
   $('#stat-proxy').textContent = proxy.enabled ? proxy.available : '未启用';
@@ -267,6 +268,7 @@ function openSettingsDialog() {
   const settings = state.settings || {};
   $('#setting-interval').value = settings.monitorIntervalSeconds ?? 30;
   $('#setting-proxy-sample-count').value = settings.proxyValidateSampleCount ?? 250;
+  $('#setting-proxy-parallelism').value = settings.proxyValidateParallelism ?? 200;
   $('#setting-alert').checked = Boolean(settings.alertEnabled);
   $('#setting-log').checked = Boolean(settings.logEnabled);
   $('#settings-dialog').showModal();
@@ -369,6 +371,7 @@ function bindEvents() {
         body: {
           monitorIntervalSeconds: Number($('#setting-interval').value),
           proxyValidateSampleCount: Number($('#setting-proxy-sample-count').value),
+          proxyValidateParallelism: Number($('#setting-proxy-parallelism').value),
           alertEnabled: $('#setting-alert').checked,
           logEnabled: $('#setting-log').checked,
         },

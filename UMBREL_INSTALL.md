@@ -28,7 +28,7 @@
 推荐的镜像地址：
 
 ```text
-ghcr.io/<github-user>/kai-bo-ti-xing:1.0.4-umbrel
+ghcr.io/<github-user>/kai-bo-ti-xing:1.0.5-umbrel
 ```
 
 ---
@@ -77,13 +77,13 @@ kaibotixing-server/docker-compose.yml
 把：
 
 ```yaml
-image: ghcr.io/xk27001/kai-bo-ti-xing:1.0.4-umbrel
+image: ghcr.io/xk27001/kai-bo-ti-xing:1.0.5-umbrel
 ```
 
 改成：
 
 ```yaml
-image: ghcr.io/<github-user>/kai-bo-ti-xing:1.0.4-umbrel
+image: ghcr.io/<github-user>/kai-bo-ti-xing:1.0.5-umbrel
 ```
 
 `ghcr.io` 后面的用户名必须与 GitHub 实际所有者完全一致，并且全部使用小写字母。
@@ -156,7 +156,7 @@ Umbrel 会从仓库默认分支读取根目录的 `umbrel-app-store.yml`。
 工作流会构建 `linux/amd64` 和 `linux/arm64` 镜像，并推送到：
 
 ```text
-ghcr.io/<github-user>/kai-bo-ti-xing:1.0.4-umbrel
+ghcr.io/<github-user>/kai-bo-ti-xing:1.0.5-umbrel
 ```
 
 ### 方式二：在本地 Docker 中构建
@@ -165,8 +165,8 @@ ghcr.io/<github-user>/kai-bo-ti-xing:1.0.4-umbrel
 
 ```bash
 docker login ghcr.io
-docker build -f kaibotixing-server/Dockerfile -t ghcr.io/<github-user>/kai-bo-ti-xing:1.0.4-umbrel .
-docker push ghcr.io/<github-user>/kai-bo-ti-xing:1.0.4-umbrel
+docker build -f kaibotixing-server/Dockerfile -t ghcr.io/<github-user>/kai-bo-ti-xing:1.0.5-umbrel .
+docker push ghcr.io/<github-user>/kai-bo-ti-xing:1.0.5-umbrel
 ```
 
 登录 GHCR 时，用户名填写 GitHub 用户名，密码填写具有 `write:packages` 权限的 GitHub Personal Access Token。
@@ -186,7 +186,7 @@ docker push ghcr.io/<github-user>/kai-bo-ti-xing:1.0.4-umbrel
 可以在没有登录 GHCR 的机器上验证：
 
 ```bash
-docker manifest inspect ghcr.io/<github-user>/kai-bo-ti-xing:1.0.4-umbrel
+docker manifest inspect ghcr.io/<github-user>/kai-bo-ti-xing:1.0.5-umbrel
 ```
 
 如果能够返回 manifest，说明 Umbrel 可以拉取。
@@ -307,20 +307,20 @@ sudo docker ps
 1. `kaibotixing-server/umbrel-app.yml`：
 
 ```yaml
-version: "1.0.4-umbrel"
+version: "1.0.5-umbrel"
 ```
 
 2. `kaibotixing-server/docker-compose.yml`：
 
 ```yaml
-image: ghcr.io/<github-user>/kai-bo-ti-xing:1.0.4-umbrel
+image: ghcr.io/<github-user>/kai-bo-ti-xing:1.0.5-umbrel
 ```
 
 3. `.github/workflows/umbrel-image.yml` 中的镜像标签：
 
 ```yaml
 tags: |
-  ${{ steps.image.outputs.name }}:1.0.4-umbrel
+  ${{ steps.image.outputs.name }}:1.0.5-umbrel
   ${{ steps.image.outputs.name }}:latest
 ```
 
@@ -366,8 +366,8 @@ sudo docker start kaibotixing-server_db_1 kaibotixing-server_app_1
 
 ```bash
 docker login
-docker build -f kaibotixing-server/Dockerfile -t <dockerhub-user>/kai-bo-ti-xing:1.0.4-umbrel .
-docker push <dockerhub-user>/kai-bo-ti-xing:1.0.4-umbrel
+docker build -f kaibotixing-server/Dockerfile -t <dockerhub-user>/kai-bo-ti-xing:1.0.5-umbrel .
+docker push <dockerhub-user>/kai-bo-ti-xing:1.0.5-umbrel
 ```
 
 在 Docker Hub 中把仓库设为 Public。
@@ -396,7 +396,7 @@ cd <gitee-repo>
 
 ```bash
 cat > .env <<'EOF'
-KBTX_IMAGE=<dockerhub-user>/kai-bo-ti-xing:1.0.4-umbrel
+KBTX_IMAGE=<dockerhub-user>/kai-bo-ti-xing:1.0.5-umbrel
 MYSQL_PASSWORD=请替换为至少16位强密码
 KBTX_HTTP_PORT=8080
 EOF

@@ -50,7 +50,8 @@ INSERT IGNORE INTO monitor_config (cfg_key, cfg_value, description) VALUES
 ('monitor.enabled', '0', '监控总开关 1启用 0停止'),
 ('alert.enabled', '1', '弹窗提醒开关 1开启 0关闭'),
 ('log.enabled', '1', '数据库日志记录开关 1开启 0关闭'),
-('crawler.proxy.validate.sample.count', '250', '代理池每轮采样验证条数');
+('crawler.proxy.validate.sample.count', '250', '代理池每轮采样验证条数'),
+('crawler.proxy.validate.parallelism', '200', '代理池验证并发数');
 
 -- 删除已废弃的爬取结果历史表（不再使用）
 DROP TABLE IF EXISTS monitor_record;

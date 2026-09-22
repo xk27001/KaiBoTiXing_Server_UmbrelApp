@@ -25,12 +25,12 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 
@@ -86,7 +86,7 @@ public class ProxyPoolService {
     private final int maxCount;
     /** 每轮实际采样验证的候选条数，可由 Web 控制台持久化配置 */
     private volatile int validateSampleCount;
-    private final int parallelism;
+    private volatile int parallelism;
     private final int fetchTimeoutSeconds;
     private final int requestTimeoutSeconds;
 
@@ -110,7 +110,7 @@ public class ProxyPoolService {
     private final java.util.concurrent.atomic.AtomicBoolean refreshPending = new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private volatile ScheduledExecutorService scheduler;
-    private volatile ExecutorService workerPool;
+    private volatile ThreadPoolExecutor workerPool;
     private volatile LocalDateTime lastRefresh;
     private volatile int lastCandidateCount;
 
@@ -133,7 +133,7 @@ public class ProxyPoolService {
         int defaultSampleCount = maxCount * sampleFactor;
         this.validateSampleCount = clampSampleCount(
                 ConfigUtil.getInt("crawler.proxy.validate.sample.count", defaultSampleCount));
-        this.parallelism = Math.max(1, ConfigUtil.getInt("crawler.proxy.validate.parallelism", 40));
+        this.parallelism = clampParallelism(ConfigUtil.getInt("crawler.proxy.validate.parallelism", 200));
         this.requestTimeoutSeconds = Math.max(3, ConfigUtil.getInt("crawler.timeout.seconds", 10));
         this.fetchTimeoutSeconds = 15;
         this.directClient = HttpClient.newBuilder()
@@ -152,6 +152,30 @@ public class ProxyPoolService {
         this.validateSampleCount = clampSampleCount(count);
     }
 
+    /** 当前代理验证并发数。 */
+    public int getParallelism() {
+        return parallelism;
+    }
+
+    /** 更新代理验证并发数，并动态调整正在运行的线程池。 */
+    public void setParallelism(int count) {
+        int safe = clampParallelism(count);
+        this.parallelism = safe;
+        ThreadPoolExecutor pool = workerPool;
+        if (pool != null && !pool.isShutdown()) {
+            if (safe > pool.getMaximumPoolSize()) {
+                pool.setMaximumPoolSize(safe);
+                pool.setCorePoolSize(safe);
+            } else {
+                pool.setCorePoolSize(safe);
+                pool.setMaximumPoolSize(safe);
+            }
+        }
+    }
+
+    private static int clampParallelism(int count) {
+        return Math.max(1, Math.min(count, 1_000));
+    }
     private static int clampSampleCount(int count) {
         return Math.max(1, Math.min(count, 10_000));
     }
@@ -219,7 +243,7 @@ public class ProxyPoolService {
             t.setDaemon(true);
             return t;
         });
-        workerPool = Executors.newFixedThreadPool(parallelism, r -> {
+        workerPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(parallelism, r -> {
             Thread t = new Thread(r, "proxy-worker");
             t.setDaemon(true);
             return t;
