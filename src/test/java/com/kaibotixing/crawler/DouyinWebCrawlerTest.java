@@ -13,6 +13,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DouyinWebCrawlerTest {
 
     @Test
+    void testCaptchaPageDetection() throws Exception {
+        DouyinWebCrawler crawler = new DouyinWebCrawler();
+        var method = DouyinWebCrawler.class.getDeclaredMethod("isCaptchaPage", String.class);
+        method.setAccessible(true);
+
+        assertTrue((Boolean) method.invoke(crawler, "<html>TTGCaptcha</html>"));
+        assertTrue((Boolean) method.invoke(crawler, "<html>验证中间页</html>"));
+        assertTrue((Boolean) method.invoke(crawler, "<html><div id=\"captcha-container\"></div></html>"));
+    }
+    @Test
     void testLiveStatusFrom() {
         assertEquals(LiveStatus.LIVE, LiveStatus.from("LIVE"));
         assertEquals(LiveStatus.OFFLINE, LiveStatus.from("OFFLINE"));

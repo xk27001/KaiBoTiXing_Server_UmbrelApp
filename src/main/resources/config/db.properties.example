@@ -16,3 +16,6 @@ crawler.proxy.validate.sample.count=250
 server.listen=0.0.0.0
 server.port=8080
 server.monitor.auto-start=true
+
+# 验证码/反爬/连接失败时换代理重试次数
+crawler.retry.count=8

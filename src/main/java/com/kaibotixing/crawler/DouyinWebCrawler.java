@@ -15,6 +15,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -61,7 +62,7 @@ public class DouyinWebCrawler implements DouyinCrawler {
      */
     public DouyinWebCrawler(ProxyPoolService proxyPool) {
         this.timeoutSeconds = ConfigUtil.getInt("crawler.timeout.seconds", 10);
-        this.maxRetries = Math.max(0, ConfigUtil.getInt("crawler.retry.count", 3));
+        this.maxRetries = Math.max(0, ConfigUtil.getInt("crawler.retry.count", 8));
         this.uaProvider = new UserAgentProvider();
         if (proxyPool != null) {
             this.proxyPool = proxyPool;
@@ -79,23 +80,25 @@ public class DouyinWebCrawler implements DouyinCrawler {
 
     @Override
     public CrawlResult crawl(Anchor anchor) {
+        String lastError = null;
         String roomId = anchor.getWebRid();
-        String html = null;
 
-        // 1. 优先用 web_rid 请求直播间
+        // 1. 优先用 web_rid 请求直播间。验证码页会自动换代理重试。
         if (roomId != null && !roomId.isBlank()) {
             String url = String.format(LIVE_URL_TEMPLATE, roomId.trim());
-            html = fetch(url);
-            if (html != null) {
-                CrawlResult result = parseLivePage(html);
+            FetchResult liveFetch = fetch(url);
+            if (liveFetch.html() != null) {
+                CrawlResult result = parseLivePage(liveFetch.html());
                 if (result.status() != LiveStatus.UNKNOWN) {
                     return result;
                 }
-                // 解析失败则尝试主页
+                lastError = result.errorMsg();
+            } else {
+                lastError = liveFetch.error();
             }
         }
 
-        // 2. 用 douyinId 或 homeUrl 请求主页
+        // 2. 用 douyinId 或 homeUrl 请求主页。
         String homeUrl = anchor.getHomeUrl();
         if (homeUrl == null || homeUrl.isBlank()) {
             String douyinId = anchor.getDouyinId();
@@ -103,92 +106,138 @@ public class DouyinWebCrawler implements DouyinCrawler {
                 homeUrl = String.format(HOME_URL_TEMPLATE, douyinId.trim());
             }
         }
+
         if (homeUrl != null && !homeUrl.isBlank()) {
-            String homeHtml = fetch(homeUrl);
-            if (homeHtml != null) {
-                if (isCaptchaPage(homeHtml)) {
-                    return CrawlResult.error("主页被抖音反爬拦截，请为主播补充房间号(web_rid)");
-                }
-                // 主页可访问时，尝试从主页 HTML 反查 web_rid 并自动回写数据库，
-                // 避免下次监控仍走主页被反爬。若反查成功且直播间页解析出有效状态，
-                // 直接用直播间结果；否则再退回主页 JSON 解析作为兜底。
+            FetchResult homeFetch = fetch(homeUrl);
+            if (homeFetch.html() != null) {
+                String homeHtml = homeFetch.html();
                 String discoveredWebRid = extractWebRidFromHome(homeHtml);
                 if (discoveredWebRid != null) {
                     log.info("主播「{}」从主页自动反查到房间号: {}",
                             anchor.getNickname(), discoveredWebRid);
                     String liveUrl = String.format(LIVE_URL_TEMPLATE, discoveredWebRid);
-                    String liveHtml = fetch(liveUrl);
-                    if (liveHtml != null) {
-                        CrawlResult liveResult = parseLivePage(liveHtml);
+                    FetchResult liveFetch = fetch(liveUrl);
+                    if (liveFetch.html() != null) {
+                        CrawlResult liveResult = parseLivePage(liveFetch.html());
                         if (liveResult.status() != LiveStatus.UNKNOWN) {
                             return CrawlResult.ofWithDiscoveredWebRid(
                                     liveResult.status(), liveResult.roomId(), discoveredWebRid);
                         }
+                        lastError = liveResult.errorMsg();
+                    } else {
+                        lastError = liveFetch.error();
                     }
                 }
-                return parseHomePage(homeHtml);
+
+                CrawlResult homeResult = parseHomePage(homeHtml);
+                if (homeResult.status() != LiveStatus.UNKNOWN) {
+                    return homeResult;
+                }
+                lastError = homeResult.errorMsg();
+            } else {
+                lastError = homeFetch.error();
             }
         }
 
-        return CrawlResult.error("未获取到可解析的页面内容");
+        return CrawlResult.error(lastError != null ? lastError : "未获取到可解析的页面内容");
     }
 
     /**
-     * 抓取页面内容，带随机 UA 与代理轮换重试：
-     * <ul>
-     *   <li>每次尝试随机选取 UA；正常请求池内随机取代理（可用代理被重复使用）；</li>
-     *   <li>失败后换一个与上次不同的代理重试（排除刚用过的），最多 {@link #maxRetries} 次，多换 IP 多试几次；</li>
-     *   <li>仅收到明确反爬信号（503/403/429）时剔除当前代理；普通超时/连接抖动不剔除，保留可用 IP 重复使用。</li>
-     * </ul>
+     * 抓取页面内容。验证码页、明确反爬状态码和空内容都会触发代理轮换；
+     * 所有代理失败后还会额外尝试一次直连。
      */
-    private String fetch(String url) {
+    private FetchResult fetch(String url) {
         Exception lastError = null;
-        int lastStatus = -1;
+        boolean lastWasCaptcha = false;
+        boolean usedProxy = false;
         Proxy lastProxy = null;
+
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             String ua = uaProvider.random();
-            // 重试时排除刚用过的代理，换新 IP；首次(lastProxy=null)池内随机
             Proxy proxy = proxyPool.next(lastProxy);
             lastProxy = proxy;
-            HttpClient httpClient = (proxy != null) ? proxyPool.clientFor(proxy) : directClient;
+            usedProxy = usedProxy || proxy != null;
             try {
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(url))
-                        .timeout(Duration.ofSeconds(timeoutSeconds))
-                        .header("User-Agent", ua)
-                        .header("Accept", "text/html,application/xhtml+xml,application/json")
-                        .header("Accept-Language", "zh-CN,zh;q=0.9")
-                        .header("Referer", "https://www.douyin.com/")
-                        .GET()
-                        .build();
-                HttpResponse<String> resp = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                int code = resp.statusCode();
+                HttpResponse<String> response = sendRequest(url, proxy, ua);
+                int code = response.statusCode();
                 if (code == 200) {
-                    return resp.body();
-                }
-                lastStatus = code;
-                lastError = new IOException("HTTP " + code);
-                if (code == 503 || code == 403 || code == 429) {
-                    // 明确反爬/限流：剔除当前代理，换代理重试
+                    String body = response.body();
+                    if (!isCaptchaPage(body)) {
+                        return new FetchResult(body, null);
+                    }
+                    lastWasCaptcha = true;
+                    lastError = new IOException("抖音验证页");
                     if (proxy != null) {
                         proxyPool.markFailed(proxy);
                     }
-                    log.warn("请求 {} 返回 {}（第 {} 次），已剔除代理 {}，换代理重试",
+                    log.warn("请求 {} 命中抖音验证页（第 {} 次），剔除代理 {}，继续换代理", url,
+                            attempt + 1, proxy);
+                    continue;
+                }
+
+                lastWasCaptcha = false;
+                lastError = new IOException("HTTP " + code);
+                if (code == 503 || code == 403 || code == 429) {
+                    if (proxy != null) {
+                        proxyPool.markFailed(proxy);
+                    }
+                    log.warn("请求 {} 返回 {}（第 {} 次），剔除代理 {}，继续换代理",
                             url, code, attempt + 1, proxy);
                     continue;
                 }
-                // 其他状态码（如 404）重试意义不大，直接失败
+
                 log.warn("请求 {} 返回状态码 {}", url, code);
-                return null;
+                return new FetchResult(null, "请求失败，HTTP 状态码 " + code);
             } catch (Exception e) {
+                lastWasCaptcha = false;
                 lastError = e;
-                // 普通超时/连接抖动：不剔除，仅换一个代理再试（保留可用 IP）
-                log.warn("请求 {} 第 {} 次失败: {}（代理 {}）", url, attempt + 1, e.getMessage(), proxy);
+                log.warn("请求 {} 第 {} 次失败: {}（代理 {}）",
+                        url, attempt + 1, e.getMessage(), proxy);
             }
         }
-        log.warn("请求 {} 重试 {} 次后仍失败，最后错误: {}，最后状态码: {}", url, maxRetries,
-                lastError != null ? lastError.getMessage() : "未知", lastStatus);
-        return null;
+
+        // 代理池可用但全部被验证码/限流时，再尝试一次直连。
+        if (usedProxy) {
+            try {
+                HttpResponse<String> direct = sendRequest(url, null, uaProvider.random());
+                if (direct.statusCode() == 200) {
+                    if (!isCaptchaPage(direct.body())) {
+                        return new FetchResult(direct.body(), null);
+                    }
+                    lastWasCaptcha = true;
+                    lastError = new IOException("直连命中抖音验证页");
+                } else {
+                    lastWasCaptcha = false;
+                    lastError = new IOException("直连 HTTP " + direct.statusCode());
+                }
+            } catch (Exception e) {
+                lastWasCaptcha = false;
+                lastError = e;
+            }
+        }
+
+        String error = lastWasCaptcha
+                ? "所有可用代理及直连均返回抖音验证页，请稍后重试或补充正确的 web_rid"
+                : "请求失败: " + (lastError == null ? "未知错误" : lastError.getMessage());
+        log.warn("请求 {} 重试 {} 次后仍失败: {}", url, maxRetries, error);
+        return new FetchResult(null, error);
+    }
+
+    private HttpResponse<String> sendRequest(String url, Proxy proxy, String userAgent) throws Exception {
+        HttpClient httpClient = proxy != null ? proxyPool.clientFor(proxy) : directClient;
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(Duration.ofSeconds(timeoutSeconds))
+                .header("User-Agent", userAgent)
+                .header("Accept", "text/html,application/xhtml+xml,application/json")
+                .header("Accept-Language", "zh-CN,zh;q=0.9")
+                .header("Referer", "https://www.douyin.com/")
+                .GET()
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private record FetchResult(String html, String error) {
     }
 
     /**
@@ -198,10 +247,14 @@ public class DouyinWebCrawler implements DouyinCrawler {
         if (html == null) {
             return false;
         }
-        return html.contains("TTGCaptcha")
+        String lower = html.toLowerCase(Locale.ROOT);
+        return lower.contains("ttgcaptcha")
                 || html.contains("验证中间页")
-                || html.contains("captcha")
-                || html.contains("verify")
+                || lower.contains("captcha_verify")
+                || lower.contains("secsdk-captcha")
+                || lower.contains("captcha-container")
+                || lower.contains("verify-bar")
+                || (html.length() < 50_000 && (lower.contains("captcha") || lower.contains("verify")))
                 || (html.length() < 10000 && !html.contains("roomId") && !html.contains("__pace_f"));
     }
 

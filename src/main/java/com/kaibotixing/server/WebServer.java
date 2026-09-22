@@ -35,7 +35,7 @@ import java.util.regex.Pattern;
 public final class WebServer implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(WebServer.class);
-    private static final String APP_VERSION = "1.0.2-umbrel";
+    private static final String APP_VERSION = "1.0.3-umbrel";
     private static final int MAX_BODY_BYTES = 1024 * 1024;
     private static final Pattern ANCHOR_PATH = Pattern.compile("^/api/anchors/(\\d+)$");
 
