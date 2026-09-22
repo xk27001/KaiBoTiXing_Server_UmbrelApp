@@ -3,7 +3,7 @@ id: kaibotixing-server
 name: 开播监控
 tagline: 自托管监控抖音主播开播状态
 category: automation
-version: "1.0.3-umbrel"
+version: "1.0.4-umbrel"
 port: 8080
 description: >-
   KaiBoTiXing 是一个自托管的抖音主播开播监控服务。它按设定的时间间隔并发检查主播直播状态，
@@ -24,7 +24,7 @@ support: https://github.com/xk27001/KaiBoTiXing_Server_UmbrelApp/issues
 icon: https://github.com/xk27001/KaiBoTiXing_Server_UmbrelApp/raw/main/kaibotixing-server/icon.svg
 gallery: []
 releaseNotes: >-
-  1.0.3：验证码页会自动剔除当前代理并继续换 IP 重试；每个页面最多请求 15 次；代理轮换，最后预留一次直连；状态未知时也会更新最近检测时间。
+  1.0.4：代理池改为抖音页面质量验证；每个页面最多请求 15 次并优先使用不同代理；兼容 RENDER_DATA、__INITIAL_STATE__ 和转义 JSON 页面结构。
 dependencies: []
 path: ""
 defaultUsername: ""

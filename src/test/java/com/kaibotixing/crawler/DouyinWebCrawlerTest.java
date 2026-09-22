@@ -13,6 +13,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DouyinWebCrawlerTest {
 
     @Test
+    void testRoomStatusFromEscapedText() throws Exception {
+        DouyinWebCrawler crawler = new DouyinWebCrawler();
+        var method = DouyinWebCrawler.class.getDeclaredMethod("parseRoomStatusFromText", String.class);
+        method.setAccessible(true);
+
+        String live = "{\\\"room\\\":{\\\"id_str\\\":\\\"1234567890\\\",\\\"status\\\":2}}";
+        CrawlResult liveResult = (CrawlResult) method.invoke(crawler, live);
+        assertEquals(LiveStatus.LIVE, liveResult.status());
+
+        String offline = "{\\\"roomId\\\":\\\"$undefined\\\"}";
+        CrawlResult offlineResult = (CrawlResult) method.invoke(crawler, offline);
+        assertEquals(LiveStatus.OFFLINE, offlineResult.status());
+    }
+    @Test
     void testCaptchaPageDetection() throws Exception {
         DouyinWebCrawler crawler = new DouyinWebCrawler();
         var method = DouyinWebCrawler.class.getDeclaredMethod("isCaptchaPage", String.class);

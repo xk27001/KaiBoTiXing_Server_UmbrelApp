@@ -19,3 +19,6 @@ server.monitor.auto-start=true
 
 # 每个页面最多请求次数（代理轮换 + 最后一次直连）
 crawler.retry.count=15
+
+# 代理验证目标：必须能返回正常抖音页面，验证码页会被拒绝
+crawler.proxy.validate.url=https://live.douyin.com/

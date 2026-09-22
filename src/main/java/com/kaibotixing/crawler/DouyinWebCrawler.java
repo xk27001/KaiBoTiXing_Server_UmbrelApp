@@ -11,11 +11,15 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.Proxy;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -41,6 +45,9 @@ public class DouyinWebCrawler implements DouyinCrawler {
     // 匹配主播主页中嵌入的直播间链接，用于自动反查 web_rid
     // 抖音个人主页含 "live.douyin.com/19xxxxxxxxxxxxxxxxxx" 形式的直播间房间号
     private static final Pattern LIVE_RID_FROM_HOME = Pattern.compile("live\\.douyin\\.com/(\\d{10,25})");
+    private static final Pattern RENDER_DATA = Pattern.compile("id=\"RENDER_DATA\"[^>]*>(.*?)</script>", Pattern.DOTALL);
+    private static final Pattern INITIAL_STATE = Pattern.compile("(?:window\\.)?__INITIAL_STATE__\\s*=\\s*", Pattern.DOTALL);
+    private static final Pattern ROOM_STATUS = Pattern.compile("\"room\"\\s*:\\s*\\{.{0,5000}?\"status\"\\s*:\\s*(\\d+)", Pattern.DOTALL);
 
     private final UserAgentProvider uaProvider;
     private final ProxyPoolService proxyPool;
@@ -150,14 +157,16 @@ public class DouyinWebCrawler implements DouyinCrawler {
         Exception lastError = null;
         boolean lastWasCaptcha = false;
         boolean usedProxy = false;
-        Proxy lastProxy = null;
+        Set<Proxy> attemptedProxies = new HashSet<>();
 
         boolean hasAvailableProxy = proxyPool.getStatus().available() > 0;
         int proxyAttempts = hasAvailableProxy ? Math.max(1, maxAttempts - 1) : maxAttempts;
         for (int attempt = 0; attempt < proxyAttempts; attempt++) {
             String ua = uaProvider.random();
-            Proxy proxy = proxyPool.next(lastProxy);
-            lastProxy = proxy;
+            Proxy proxy = proxyPool.nextExcluding(attemptedProxies);
+            if (proxy != null) {
+                attemptedProxies.add(proxy);
+            }
             usedProxy = usedProxy || proxy != null;
             try {
                 HttpResponse<String> response = sendRequest(url, proxy, ua);
@@ -261,30 +270,144 @@ public class DouyinWebCrawler implements DouyinCrawler {
     }
 
     /**
-     * 解析直播间页面，提取 room status 与 roomId。
+     * 解析直播间页面，依次支持 _ROUTER_DATA、__pace_f、RENDER_DATA、__INITIAL_STATE__ 和文本状态兜底。
      */
     private CrawlResult parseLivePage(String html) {
-        JsonNode json = extractRouterData(html);
-        if (json != null) {
-            CrawlResult result = resolveFromJson(json);
-            if (result.status() != LiveStatus.UNKNOWN) {
-                return result;
-            }
+        CrawlResult result = parseRouterData(html);
+        if (result.status() != LiveStatus.UNKNOWN) {
+            return result;
         }
-        return parsePaceData(html);
+        result = parsePaceData(html);
+        if (result.status() != LiveStatus.UNKNOWN) {
+            return result;
+        }
+        result = parseRenderData(html);
+        if (result.status() != LiveStatus.UNKNOWN) {
+            return result;
+        }
+        result = parseInitialStateData(html);
+        if (result.status() != LiveStatus.UNKNOWN) {
+            return result;
+        }
+        result = parseRoomStatusFromText(html);
+        if (result.status() != LiveStatus.UNKNOWN) {
+            return result;
+        }
+        return CrawlResult.error("未能从页面提取直播状态（长度 " + html.length()
+                + "，roomId=" + html.contains("roomId")
+                + "，pace=" + html.contains("__pace_f") + "）");
     }
 
     private CrawlResult parseHomePage(String html) {
-        JsonNode json = extractRouterData(html);
-        if (json != null) {
-            CrawlResult result = resolveFromJson(json);
-            if (result.status() != LiveStatus.UNKNOWN) {
-                return result;
-            }
+        CrawlResult result = parseRouterData(html);
+        if (result.status() != LiveStatus.UNKNOWN) {
+            return result;
         }
-        return parsePaceData(html);
+        result = parsePaceData(html);
+        if (result.status() != LiveStatus.UNKNOWN) {
+            return result;
+        }
+        result = parseRenderData(html);
+        if (result.status() != LiveStatus.UNKNOWN) {
+            return result;
+        }
+        result = parseInitialStateData(html);
+        if (result.status() != LiveStatus.UNKNOWN) {
+            return result;
+        }
+        result = parseRoomStatusFromText(html);
+        return result.status() != LiveStatus.UNKNOWN ? result : CrawlResult.error("未能从页面提取直播状态");
     }
 
+    private CrawlResult parseRouterData(String html) {
+        JsonNode json = extractRouterData(html);
+        return json == null ? CrawlResult.error("页面中没有 _ROUTER_DATA") : resolveFromJson(json);
+    }
+
+    private CrawlResult parseRenderData(String html) {
+        Matcher matcher = RENDER_DATA.matcher(html);
+        if (!matcher.find()) {
+            return CrawlResult.error("页面中没有 RENDER_DATA");
+        }
+        try {
+            String decoded = URLDecoder.decode(matcher.group(1), StandardCharsets.UTF_8);
+            return resolveFromJson(MAPPER.readTree(decoded));
+        } catch (Exception e) {
+            log.debug("解析 RENDER_DATA 失败: {}", e.getMessage());
+            return CrawlResult.error("RENDER_DATA 解析失败");
+        }
+    }
+
+    private CrawlResult parseInitialStateData(String html) {
+        Matcher matcher = INITIAL_STATE.matcher(html);
+        if (!matcher.find()) {
+            return CrawlResult.error("页面中没有 __INITIAL_STATE__");
+        }
+        int jsonStart = html.indexOf('{', matcher.end());
+        if (jsonStart < 0) {
+            return CrawlResult.error("__INITIAL_STATE__ 格式异常");
+        }
+        try {
+            String jsonText = extractBalancedJson(html, jsonStart);
+            return resolveFromJson(MAPPER.readTree(jsonText));
+        } catch (Exception e) {
+            log.debug("解析 __INITIAL_STATE__ 失败: {}", e.getMessage());
+            return CrawlResult.error("__INITIAL_STATE__ 解析失败");
+        }
+    }
+
+    /** 提取从起始符号开始的完整 JSON 对象/数组，正确处理字符串中的括号。 */
+    private String extractBalancedJson(String text, int start) {
+        char open = text.charAt(start);
+        char close = open == '{' ? '}' : ']';
+        int depth = 0;
+        boolean quoted = false;
+        boolean escaped = false;
+        for (int i = start; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (quoted) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '"') {
+                    quoted = false;
+                }
+                continue;
+            }
+            if (c == '"') {
+                quoted = true;
+            } else if (c == open) {
+                depth++;
+            } else if (c == close && --depth == 0) {
+                return text.substring(start, i + 1);
+            }
+        }
+        throw new IllegalArgumentException("JSON 对象未闭合");
+    }
+
+    /** 对转义后的页面文本做状态兜底，适配新版抖音字段。 */
+    private CrawlResult parseRoomStatusFromText(String html) {
+        String normalized = html.replace("\\\"", "\"").replace("\\\\", "\\");
+        Matcher statusMatcher = ROOM_STATUS.matcher(normalized);
+        if (statusMatcher.find()) {
+            int status = Integer.parseInt(statusMatcher.group(1));
+            return CrawlResult.of(status == 2 ? LiveStatus.LIVE : LiveStatus.OFFLINE, null);
+        }
+        if (normalized.contains("\"roomId\":\"$undefined\"")
+                || normalized.contains("\"room_status\":4")
+                || normalized.contains("\"live_status\":4")
+                || normalized.contains("\"is_live\":false")
+                || html.contains("直播已结束")) {
+            return CrawlResult.of(LiveStatus.OFFLINE, null);
+        }
+        if (normalized.contains("\"flv_pull_url\"")
+                || normalized.contains("\"hls_pull_url\"")
+                || normalized.contains("\"user_count_str\"")) {
+            return CrawlResult.of(LiveStatus.LIVE, null);
+        }
+        return CrawlResult.error("页面文本中没有直播状态");
+    }
     /**
      * 解析 React SSR 的 __pace_f.push([1,"..."]) 数据。
      * 每个数据块格式为 {@code <hex>:I{json}}，需要去掉前缀、反转义后再解析。

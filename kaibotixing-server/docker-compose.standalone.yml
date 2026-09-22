@@ -2,7 +2,7 @@ version: "3.7"
 
 services:
   app:
-    image: ${KBTX_IMAGE:-ghcr.io/xk27001/kai-bo-ti-xing:1.0.3-umbrel}
+    image: ${KBTX_IMAGE:-ghcr.io/xk27001/kai-bo-ti-xing:1.0.4-umbrel}
     init: true
     restart: unless-stopped
     user: "1000:1000"

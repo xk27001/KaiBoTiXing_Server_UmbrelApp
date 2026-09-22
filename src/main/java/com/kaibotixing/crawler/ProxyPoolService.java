@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
@@ -65,7 +66,7 @@ public class ProxyPoolService {
             "https://ghproxy.homeboyc.cn/");
 
     /** 默认代理连通性验证目标（国内可达的轻量页面；自动补充 HTTP 版备选） */
-    private static final String DEFAULT_VALIDATE_URL = "https://www.baidu.com";
+    private static final String DEFAULT_VALIDATE_URL = "https://live.douyin.com/";
 
     private static final Pattern IP_PORT = Pattern.compile(
             "^\\d{1,3}(\\.\\d{1,3}){3}:\\d{2,5}$");
@@ -310,6 +311,7 @@ public class ProxyPoolService {
             available.addAll(kept);
             // 清理已不在池中的代理缓存连接
             proxyClients.keySet().removeIf(p -> !available.contains(p));
+            usageCount.keySet().removeIf(p -> !available.contains(p));
 
             lastRefresh = LocalDateTime.now();
             log.info("代理池刷新完成：验证 {} 条候选，可用 {} 个代理", toValidate.size(), kept.size());
@@ -414,53 +416,103 @@ public class ProxyPoolService {
                     .uri(URI.create(target))
                     .timeout(Duration.ofSeconds(validateTimeoutSeconds))
                     .header("User-Agent", FETCH_UA)
+                    .header("Accept", "text/html,application/xhtml+xml,application/json")
+                    .header("Accept-Language", "zh-CN,zh;q=0.9")
                     .GET()
                     .build();
-            HttpResponse<Void> resp = client.send(req, HttpResponse.BodyHandlers.discarding());
-            return resp.statusCode() >= 200 && resp.statusCode() < 400;
+            HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+            int code = resp.statusCode();
+            if (code < 200 || code >= 400) {
+                return false;
+            }
+            String body = resp.body();
+            if (target.contains("douyin.com")) {
+                return isUsableDouyinPage(body);
+            }
+            return body != null && !body.isBlank();
         } catch (Exception e) {
             return false;
         }
     }
 
-    /**
-     * 随机返回一个可用代理；池为空返回 null（调用方应直连兜底）。
-     * <p>
-     * 采用「池内随机 + 排除指定」策略：
-     * <ul>
-     *   <li>正常请求传 {@code exclude=null}：池内完全随机，可用代理被随机反复命中 —— 满足「能用的 IP 重复使用」；</li>
-     *   <li>失败重试传 {@code exclude=上次代理}：随机取一个与上次不同的代理 —— 满足「多换 IP 多试几次」。</li>
-     * </ul>
-     */
-    public Proxy next(Proxy exclude) {
-        List<Proxy> list = available;
-        int size = list.size();
-        if (size == 0) {
-            return null;
+    /** 只有能返回正常抖音 HTML、且不是验证码页的代理才进入可用池。 */
+    private boolean isUsableDouyinPage(String body) {
+        if (body == null || body.length() < 500) {
+            return false;
         }
-        ThreadLocalRandom rnd = ThreadLocalRandom.current();
-        if (size == 1) {
-            return list.get(0);
+        String lower = body.toLowerCase(Locale.ROOT);
+        boolean captcha = lower.contains("ttgcaptcha")
+                || body.contains("验证中间页")
+                || lower.contains("captcha_verify")
+                || lower.contains("secsdk-captcha")
+                || lower.contains("captcha-container")
+                || lower.contains("verify-bar");
+        if (captcha) {
+            return false;
         }
-        if (exclude == null) {
-            return list.get(rnd.nextInt(size));
-        }
-        // 排除指定代理：随机重试，最多尝试 N 次，避免无限循环
-        for (int i = 0; i < 10; i++) {
-            Proxy p = list.get(rnd.nextInt(size));
-            if (!p.equals(exclude)) {
-                return p;
-            }
-        }
-        // 兜底：全池顺序找一个非 exclude 的
-        for (Proxy p : list) {
-            if (!p.equals(exclude)) {
-                return p;
-            }
-        }
-        return list.get(rnd.nextInt(size));
+        return body.contains("__pace_f")
+                || body.contains("_ROUTER_DATA")
+                || body.contains("RENDER_DATA")
+                || lower.contains("douyin")
+                || body.length() > 10_000;
     }
 
+    /**
+     * 返回一个未在本次任务中使用过的代理，并优先选择历史使用次数最少的代理。
+     * 可用代理不足以覆盖全部重试时返回 null，由调用方决定是否直连。
+     */
+    public Proxy nextExcluding(Set<Proxy> excluded) {
+        List<Proxy> candidates = new ArrayList<>();
+        for (Proxy proxy : available) {
+            if (excluded == null || !excluded.contains(proxy)) {
+                candidates.add(proxy);
+            }
+        }
+        return chooseLeastUsed(candidates);
+    }
+
+    /** 返回一个可用代理；优先排除指定代理，池内只有一个时才允许重复。 */
+    public Proxy next(Proxy exclude) {
+        Set<Proxy> excluded = exclude == null ? Set.of() : Set.of(exclude);
+        Proxy selected = chooseLeastUsed(candidateList(excluded));
+        return selected != null ? selected : chooseLeastUsed(candidateList(Set.of()));
+    }
+
+    private List<Proxy> candidateList(Set<Proxy> excluded) {
+        List<Proxy> candidates = new ArrayList<>();
+        for (Proxy proxy : available) {
+            if (!excluded.contains(proxy)) {
+                candidates.add(proxy);
+            }
+        }
+        return candidates;
+    }
+
+    private Proxy chooseLeastUsed(List<Proxy> candidates) {
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        int minUse = Integer.MAX_VALUE;
+        for (Proxy proxy : candidates) {
+            int count = usageCount.computeIfAbsent(
+                    proxy, ignored -> new java.util.concurrent.atomic.AtomicInteger()).get();
+            if (count < minUse) {
+                minUse = count;
+            }
+        }
+        List<Proxy> leastUsed = new ArrayList<>();
+        for (Proxy proxy : candidates) {
+            int count = usageCount.computeIfAbsent(
+                    proxy, ignored -> new java.util.concurrent.atomic.AtomicInteger()).get();
+            if (count == minUse) {
+                leastUsed.add(proxy);
+            }
+        }
+        Proxy selected = leastUsed.get(ThreadLocalRandom.current().nextInt(leastUsed.size()));
+        usageCount.computeIfAbsent(
+                selected, ignored -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet();
+        return selected;
+    }
     /** 兼容无参调用：池内随机（好代理会被重复使用）。 */
     public Proxy next() {
         return next(null);
@@ -478,6 +530,7 @@ public class ProxyPoolService {
         }
         if (available.remove(proxy)) {
             proxyClients.remove(proxy);
+            usageCount.remove(proxy);
             log.debug("代理 {} 使用失败，已移出可用池", proxy);
             addEvent("代理 %s 使用失败，已移出可用池（剩余 %d）", proxy, available.size());
         }
