@@ -39,6 +39,18 @@ public class MonitorConfigDao {
         return defaultValue;
     }
 
+    /**
+     * 仅在配置不存在时写入默认值，不覆盖用户在网页中保存的设置。
+     */
+    public void setIfAbsent(String key, String value) throws SQLException {
+        String sql = "INSERT IGNORE INTO monitor_config (cfg_key, cfg_value) VALUES (?, ?)";
+        try (Connection conn = DataSourceManager.getDataSource().getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, key);
+            ps.setString(2, value);
+            ps.executeUpdate();
+        }
+    }
     public void set(String key, String value) throws SQLException {
         String sql = "INSERT INTO monitor_config (cfg_key, cfg_value) VALUES (?, ?) " +
                 "ON DUPLICATE KEY UPDATE cfg_value = VALUES(cfg_value)";

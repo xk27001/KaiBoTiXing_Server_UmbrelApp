@@ -2,6 +2,14 @@
 
 本项目的重要变更记录在此文件中。
 
+## [1.0.6-umbrel] - 2026-09-22
+
+### Fixed
+
+- 服务启动时检查数据库配置，缺少 `crawler.proxy.validate.parallelism` 时自动写入默认值 `200`。
+- 已存在的用户配置不会被覆盖。
+- 网页保存设置后继续写入 `monitor_config`。
+
 ## [1.0.5-umbrel] - 2026-09-22
 
 ### Added

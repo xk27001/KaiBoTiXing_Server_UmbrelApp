@@ -49,6 +49,7 @@ public final class ServerRuntime implements AutoCloseable {
 
     public ServerRuntime() throws SQLException {
         scheduler = new MonitorScheduler(new DouyinWebCrawler(proxyPool), logService, alertService);
+        ensureRuntimeSettings();
         loadSettings();
     }
 
@@ -65,6 +66,11 @@ public final class ServerRuntime implements AutoCloseable {
         log.info("KaiBoTiXing 服务端已启动，监听端口 {}", ConfigUtil.getInt("server.port", 8080));
     }
 
+    /** 确保新增配置在数据库中真实存在；已存在的用户设置不会被覆盖。 */
+    private void ensureRuntimeSettings() throws SQLException {
+        configDao.setIfAbsent("crawler.proxy.validate.sample.count", "250");
+        configDao.setIfAbsent("crawler.proxy.validate.parallelism", "200");
+    }
     private void loadSettings() throws SQLException {
         Map<String, String> config = configDao.findAll();
         monitorIntervalSeconds = parsePositiveInt(
@@ -76,8 +82,6 @@ public final class ServerRuntime implements AutoCloseable {
                 proxyPool.getValidateSampleCount(), 1, 10_000);
         scheduler.setAlertEnabled(alertEnabled);
         logService.setLogEnabled(logEnabled);
-        proxyValidateSampleCount = parsePositiveInt(
-                config.get("crawler.proxy.validate.sample.count"), proxyPool.getValidateSampleCount(), 1, 10_000);
         proxyValidateParallelism = parsePositiveInt(
                 config.get("crawler.proxy.validate.parallelism"), proxyPool.getParallelism(), 1, 1_000);
         proxyPool.setValidateSampleCount(proxyValidateSampleCount);
