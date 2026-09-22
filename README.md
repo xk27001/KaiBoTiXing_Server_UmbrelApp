@@ -211,8 +211,8 @@ crawler.proxy.validate.sample.count=250
 crawler.proxy.validate.sample.factor=5
 # 代理连通性验证目标 URL（需国内可达，自动补充 http:// 版备选）
 crawler.proxy.validate.url=https://www.baidu.com
-# 503/403/429 或连接失败时换代理重试次数
-crawler.retry.count=8
+# 每个页面最多请求次数（代理轮换 + 最后一次直连）
+crawler.retry.count=15
 ```
 
 工作原理：

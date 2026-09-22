@@ -224,10 +224,10 @@ public class MonitorScheduler {
      * 取该值的 1.5 倍并留缓冲，避免误杀正常任务，又能终结卡死任务。
      */
     private long computeTaskTimeoutMs() {
-        int retry = Math.max(1, ConfigUtil.getInt("crawler.retry.count", 8));
+        int attempts = Math.min(50, Math.max(2, ConfigUtil.getInt("crawler.retry.count", 15)));
         int timeout = Math.max(3, ConfigUtil.getInt("crawler.timeout.seconds", 10));
-        // 2(直播间+主页) × (retry+1) × timeout 秒，再乘 1.5 缓冲
-        return (long) (2 * (retry + 1) * timeout * 1.5) * 1000L;
+        // 2(直播间+主页) × attempts × timeout 秒，再乘 1.5 缓冲
+        return (long) (2 * attempts * timeout * 1.5) * 1000L;
     }
 
     private void crawlOne(Anchor anchor) {
@@ -257,8 +257,13 @@ public class MonitorScheduler {
             }
         }
 
-        // 状态未知时：保留原状态，不更新、不做边沿检测、不触发提醒
+        // 状态未知时：保留原状态，但仍记录本次检测时间，不做边沿检测、不触发提醒
         if (current == LiveStatus.UNKNOWN) {
+            try {
+                anchorDao.updateLastCheckTime(anchor.getId());
+            } catch (SQLException e) {
+                log.warn("更新最近检测时间失败: {}", e.getMessage());
+            }
             logService.warn("监控", "主播「" + anchor.getNickname() + "」状态未知，保留原状态（"
                     + (previous == null ? "未知" : previous.getLabel()) + "）"
                     + (result.errorMsg() != null ? ": " + result.errorMsg() : ""));

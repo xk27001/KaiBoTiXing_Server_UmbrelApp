@@ -122,6 +122,18 @@ public class AnchorDao {
         }
     }
 
+    /**
+     * 只更新最近检测时间，不改变上次可信状态。用于本次检测结果为 UNKNOWN 的场景。
+     */
+    public void updateLastCheckTime(long id) throws SQLException {
+        String sql = "UPDATE anchor SET last_check_time=NOW() WHERE id=?";
+        try (Connection conn = DataSourceManager.getDataSource().getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            ps.executeUpdate();
+        }
+    }
+
     private Anchor map(ResultSet rs) throws SQLException {
         Anchor a = new Anchor();
         a.setId(rs.getLong("id"));

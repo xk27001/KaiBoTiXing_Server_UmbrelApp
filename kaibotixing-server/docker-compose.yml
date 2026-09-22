@@ -29,6 +29,7 @@ services:
       KBTX_DB_PARAMS: useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
       KBTX_DB_AUTO_CREATE: "false"
       KBTX_CRAWLER_PROXY_ENABLED: "true"
+      KBTX_CRAWLER_RETRY_COUNT: "15"
     volumes:
       - ${APP_DATA_DIR}/data/logs:/app/logs
 

@@ -24,7 +24,7 @@ support: https://github.com/xk27001/KaiBoTiXing_Server_UmbrelApp/issues
 icon: https://github.com/xk27001/KaiBoTiXing_Server_UmbrelApp/raw/main/kaibotixing-server/icon.svg
 gallery: []
 releaseNotes: >-
-  1.0.3：验证码页会自动剔除当前代理并继续换 IP 重试；默认重试次数提高到 8 次；所有代理失败后额外尝试直连。
+  1.0.3：验证码页会自动剔除当前代理并继续换 IP 重试；每个页面最多请求 15 次；代理轮换，最后预留一次直连；状态未知时也会更新最近检测时间。
 dependencies: []
 path: ""
 defaultUsername: ""

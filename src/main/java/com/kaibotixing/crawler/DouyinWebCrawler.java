@@ -46,7 +46,7 @@ public class DouyinWebCrawler implements DouyinCrawler {
     private final ProxyPoolService proxyPool;
     private final boolean ownsProxyPool;
     private final int timeoutSeconds;
-    private final int maxRetries;
+    private final int maxAttempts;
     /** 直连 HttpClient（代理池为空时的兜底） */
     private final HttpClient directClient;
 
@@ -62,7 +62,7 @@ public class DouyinWebCrawler implements DouyinCrawler {
      */
     public DouyinWebCrawler(ProxyPoolService proxyPool) {
         this.timeoutSeconds = ConfigUtil.getInt("crawler.timeout.seconds", 10);
-        this.maxRetries = Math.max(0, ConfigUtil.getInt("crawler.retry.count", 8));
+        this.maxAttempts = Math.min(50, Math.max(2, ConfigUtil.getInt("crawler.retry.count", 15)));
         this.uaProvider = new UserAgentProvider();
         if (proxyPool != null) {
             this.proxyPool = proxyPool;
@@ -152,7 +152,9 @@ public class DouyinWebCrawler implements DouyinCrawler {
         boolean usedProxy = false;
         Proxy lastProxy = null;
 
-        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+        boolean hasAvailableProxy = proxyPool.getStatus().available() > 0;
+        int proxyAttempts = hasAvailableProxy ? Math.max(1, maxAttempts - 1) : maxAttempts;
+        for (int attempt = 0; attempt < proxyAttempts; attempt++) {
             String ua = uaProvider.random();
             Proxy proxy = proxyPool.next(lastProxy);
             lastProxy = proxy;
@@ -219,7 +221,7 @@ public class DouyinWebCrawler implements DouyinCrawler {
         String error = lastWasCaptcha
                 ? "所有可用代理及直连均返回抖音验证页，请稍后重试或补充正确的 web_rid"
                 : "请求失败: " + (lastError == null ? "未知错误" : lastError.getMessage());
-        log.warn("请求 {} 重试 {} 次后仍失败: {}", url, maxRetries, error);
+        log.warn("请求 {} 最多尝试 {} 次后仍失败: {}", url, maxAttempts, error);
         return new FetchResult(null, error);
     }
 

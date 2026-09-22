@@ -17,5 +17,5 @@ server.listen=0.0.0.0
 server.port=8080
 server.monitor.auto-start=true
 
-# 验证码/反爬/连接失败时换代理重试次数
-crawler.retry.count=8
+# 每个页面最多请求次数（代理轮换 + 最后一次直连）
+crawler.retry.count=15
