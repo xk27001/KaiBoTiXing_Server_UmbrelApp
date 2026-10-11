@@ -4,15 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#d94841">
-  <link rel="icon" href="/icon.svg?v=1.0.6" type="image/svg+xml">
-  <link rel="stylesheet" href="/app.css?v=1.0.6">
+  <link rel="icon" href="/icon.svg?v=1.0.7" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css?v=1.0.7">
   <title>KaiBoTiXing 开播监控</title>
 </head>
 <body>
   <div class="page">
     <header class="hero">
       <div class="brand">
-        <img src="/icon.svg?v=1.0.6" alt="" width="48" height="48">
+        <img src="/icon.svg?v=1.0.7" alt="" width="48" height="48">
         <div>
           <p class="eyebrow">UMBREL SERVER</p>
           <h1>抖音主播开播监控</h1>
@@ -189,6 +189,9 @@
       <label>代理池验证并发数
         <input id="setting-proxy-parallelism" type="number" min="1" max="1000" required>
       </label>
+      <label>代理池自动刷新间隔（分钟）
+        <input id="setting-proxy-refresh-minutes" type="number" min="1" max="1440" required>
+      </label>
       <p class="hint">验证条数和并发数越大，代理池刷新越快，但会占用更多网络和 CPU 资源。</p>
       <label class="check-row"><input id="setting-alert" type="checkbox"> 记录开播提醒事件</label>
       <label class="check-row"><input id="setting-log" type="checkbox"> 写入数据库日志</label>
@@ -201,6 +204,6 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=1.0.6"></script>
+  <script src="/app.js?v=1.0.7"></script>
 </body>
 </html>

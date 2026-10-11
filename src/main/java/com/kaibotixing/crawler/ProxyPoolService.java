@@ -28,6 +28,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -79,7 +80,7 @@ public class ProxyPoolService {
     private final boolean enabled;
     private final List<String> sources;
     private final List<String> mirrorPrefixes;
-    private final long refreshMinutes;
+    private volatile long refreshMinutes;
     private final int validateTimeoutSeconds;
     private final String validateUrl;
     private final String validateUrlBackup;
@@ -110,6 +111,7 @@ public class ProxyPoolService {
     private final java.util.concurrent.atomic.AtomicBoolean refreshPending = new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private volatile ScheduledExecutorService scheduler;
+    private volatile ScheduledFuture<?> refreshFuture;
     private volatile ThreadPoolExecutor workerPool;
     private volatile LocalDateTime lastRefresh;
     private volatile int lastCandidateCount;
@@ -124,7 +126,7 @@ public class ProxyPoolService {
         this.sources = configuredSources.isEmpty() ? parseList(DEFAULT_SOURCES) : configuredSources;
         List<String> configuredMirrors = parseList(ConfigUtil.get("crawler.proxy.mirror.prefixes", ""));
         this.mirrorPrefixes = configuredMirrors.isEmpty() ? parseList(DEFAULT_MIRROR_PREFIXES) : configuredMirrors;
-        this.refreshMinutes = Math.max(1, ConfigUtil.getInt("crawler.proxy.refresh.minutes", 30));
+        this.refreshMinutes = clampRefreshMinutes(ConfigUtil.getInt("crawler.proxy.refresh.minutes", 40));
         this.validateTimeoutSeconds = Math.max(1, ConfigUtil.getInt("crawler.proxy.validate.timeout.seconds", 8));
         this.validateUrl = ConfigUtil.get("crawler.proxy.validate.url", DEFAULT_VALIDATE_URL);
         this.validateUrlBackup = toHttp(this.validateUrl);
@@ -173,6 +175,36 @@ public class ProxyPoolService {
         }
     }
 
+    /** 当前代理池自动刷新间隔（分钟）。 */
+    public long getRefreshMinutes() {
+        return refreshMinutes;
+    }
+
+    /** 更新自动刷新间隔；运行中会取消旧计划并按新间隔重新调度。 */
+    public void setRefreshMinutes(int minutes) {
+        this.refreshMinutes = clampRefreshMinutes(minutes);
+        ScheduledExecutorService currentScheduler = scheduler;
+        if (currentScheduler != null && !currentScheduler.isShutdown()) {
+            schedulePeriodicRefresh();
+        }
+    }
+
+    private static int clampRefreshMinutes(int minutes) {
+        return Math.max(1, Math.min(minutes, 1_440));
+    }
+
+    private synchronized void schedulePeriodicRefresh() {
+        ScheduledExecutorService currentScheduler = scheduler;
+        if (currentScheduler == null || currentScheduler.isShutdown()) {
+            return;
+        }
+        if (refreshFuture != null) {
+            refreshFuture.cancel(false);
+        }
+        refreshFuture = currentScheduler.scheduleWithFixedDelay(
+                this::refresh, refreshMinutes, refreshMinutes, TimeUnit.MINUTES);
+        addEvent("自动刷新计划已更新：每 %d 分钟执行一次", refreshMinutes);
+    }
     private static int clampParallelism(int count) {
         return Math.max(1, Math.min(count, 1_000));
     }
@@ -249,7 +281,7 @@ public class ProxyPoolService {
             return t;
         });
         scheduler.execute(this::refresh);
-        scheduler.scheduleWithFixedDelay(this::refresh, refreshMinutes, refreshMinutes, TimeUnit.MINUTES);
+        schedulePeriodicRefresh();
         log.info("代理池已启动：{} 个数据源、{} 个镜像前缀，刷新间隔 {} 分钟，验证目标 {}（备选 {}）",
                 sources.size(), mirrorPrefixes.size(), refreshMinutes, validateUrl, validateUrlBackup);
         addEvent("代理池已启动：%d 个数据源、%d 个镜像前缀，刷新间隔 %d 分钟，验证目标 %s（备选 %s）",

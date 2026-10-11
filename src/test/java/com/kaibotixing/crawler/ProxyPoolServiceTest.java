@@ -7,6 +7,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class ProxyPoolServiceTest {
 
     @Test
+    void testRefreshMinutesClamp() {
+        ProxyPoolService service = new ProxyPoolService();
+
+        service.setRefreshMinutes(40);
+        assertEquals(40, service.getRefreshMinutes());
+
+        service.setRefreshMinutes(0);
+        assertEquals(1, service.getRefreshMinutes());
+
+        service.setRefreshMinutes(10_000);
+        assertEquals(1_440, service.getRefreshMinutes());
+    }
+    @Test
     void testParallelismClamp() {
         ProxyPoolService service = new ProxyPoolService();
 

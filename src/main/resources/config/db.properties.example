@@ -12,6 +12,7 @@ db.auto.create=true
 # 代理池每轮采样验证条数和验证并发数（网页设置会持久化到 monitor_config）
 crawler.proxy.validate.sample.count=250
 crawler.proxy.validate.parallelism=200
+crawler.proxy.refresh.minutes=40
 
 # 无界面 Web 服务端
 server.listen=0.0.0.0
