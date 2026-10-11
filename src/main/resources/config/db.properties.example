@@ -1,13 +1,26 @@
-# 复制为 db.properties 后按实际环境修改。
-# 容器/Umbrel 部署不需要此文件，可直接使用 KBTX_* 环境变量覆盖。
+# KaiBoTiXing 数据库配置示例（阿里云 RDS MySQL）
+#
+# 复制为 db.properties 后按实际环境修改：
+#   src/main/resources/config/db.properties
+#
+# Umbrel 社区版把配置放在宿主机：
+#   ~/umbrel/app-data/kaibotixing-server/data/config/db.properties
+#
+# 请勿把包含真实密码的 db.properties 提交到 Git。
 
-db.host=127.0.0.1
+# 阿里云 RDS 连接地址，例如 rm-xxxxxxxxxxxx.mysql.rds.aliyuncs.com
+db.host=rm-xxxxxxxxxxxx.mysql.rds.aliyuncs.com
 db.port=3306
 db.database=kai_bo_ti_xing
 db.username=kaibotixing
 db.password=change-me
-db.params=useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
-db.auto.create=true
+
+# 公网访问阿里云 RDS 时默认要求 SSL。若实例未开启 SSL，可改为：
+# useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&sslMode=DISABLED&useSSL=false&allowPublicKeyRetrieval=true
+db.params=useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&sslMode=REQUIRED&useSSL=true&requireSSL=true&allowPublicKeyRetrieval=false
+
+# 阿里云 RDS 中建议预先创建数据库和账号，并关闭自动建库。
+db.auto.create=false
 
 # 代理池每轮采样验证条数和验证并发数（网页设置会持久化到 monitor_config）
 crawler.proxy.validate.sample.count=250

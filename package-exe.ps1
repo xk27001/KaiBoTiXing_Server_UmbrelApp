@@ -1,4 +1,4 @@
-﻿# 抖音主播开播监控 - Windows exe 打包脚本（服务端 + 客户端）
+# 抖音主播开播监控 - Windows exe 打包脚本（服务端 + 客户端）
 # 用法:
 #   powershell -ExecutionPolicy Bypass -File package-exe.ps1             # 打包服务端与客户端
 #   powershell -ExecutionPolicy Bypass -File package-exe.ps1 -App server # 仅打包服务端
@@ -15,8 +15,9 @@ Set-Location $projectRoot
 
 $fxBase = Join-Path $env:USERPROFILE ".m2\repository\org\openjfx"
 $fxVer = "23.0.2"
-$appVersion = "1.0.0"
-$fatJar = "target\KaiBoTiXing-1.0.0-fat.jar"
+[xml]$pom = Get-Content (Join-Path $projectRoot "pom.xml")
+$appVersion = $pom.project.version
+$fatJar = "target\KaiBoTiXing-$appVersion-fat.jar"
 
 # 打包目标：服务端（抖音主播开播监控）与客户端（主播开播提醒）
 # 两个程序共用同一个 fat jar，仅入口类与产物名称不同

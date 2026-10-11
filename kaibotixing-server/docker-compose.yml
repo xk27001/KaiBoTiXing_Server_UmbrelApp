@@ -8,7 +8,7 @@ services:
       PROXY_AUTH_ADD: "true"
 
   app:
-    image: ghcr.io/xk27001/kai-bo-ti-xing:1.0.8-umbrel
+    image: ghcr.io/xk27001/kai-bo-ti-xing:1.0.9-umbrel
     init: true
     restart: on-failure
     user: "1000:1000"
@@ -22,5 +22,7 @@ services:
       KBTX_CRAWLER_PROXY_ENABLED: "true"
       KBTX_CRAWLER_RETRY_COUNT: "15"
     volumes:
+      # 首次安装前将阿里云 RDS 配置写入：
+      # ${APP_DATA_DIR}/data/config/db.properties
       - ${APP_DATA_DIR}/data/config:/app/config:ro
       - ${APP_DATA_DIR}/data/logs:/app/logs

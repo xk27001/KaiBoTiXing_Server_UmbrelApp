@@ -6,7 +6,7 @@
 
     <groupId>com.kaibotixing</groupId>
     <artifactId>KaiBoTiXing</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.9</version>
     <packaging>jar</packaging>
 
     <name>抖音主播开播监控</name>

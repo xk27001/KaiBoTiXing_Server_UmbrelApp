@@ -11,12 +11,12 @@ import java.util.Locale;
 import java.util.Properties;
 
 /**
- * 配置读取工具：从 classpath 下的 config/db.properties 加载，并允许通过
+ * 配置读取工具：从 classpath 或外部 db.properties 加载，并允许通过
  * JVM 系统属性或 KBTX_* 环境变量覆盖单个配置项。
  *
  * <p>例如 {@code db.host} 可分别通过 {@code -Dkaibotixing.db.host=...}、
  * {@code -Ddb.host=...} 或环境变量 {@code KBTX_DB_HOST} 覆盖。容器部署优先使用环境变量，
- * 避免把数据库密码写入镜像或配置文件。</p>
+ * 避免把数据库密码写入镜像。连接阿里云 RDS 时，推荐挂载只读的 db.properties。</p>
  */
 public final class ConfigUtil {
 
