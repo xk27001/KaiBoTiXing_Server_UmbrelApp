@@ -2,6 +2,14 @@
 
 本项目的重要变更记录在此文件中。
 
+## [1.0.8-umbrel] - 2026-10-12
+
+### Fixed
+
+- 支持从外部文件 `/app/config/db.properties` 加载数据库配置。
+- Umbrel 应用改为连接用户现有 MySQL，不再使用容器内空数据库。
+- 数据库密码继续保存在 Umbrel 的 `app-data` 目录中，不会提交到 Git。
+
 ## [1.0.7-umbrel] - 2026-10-12
 
 ### Fixed

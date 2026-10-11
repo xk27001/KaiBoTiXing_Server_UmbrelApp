@@ -5,6 +5,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Properties;
 
@@ -27,15 +29,37 @@ public final class ConfigUtil {
         try (InputStream in = ConfigUtil.class.getClassLoader().getResourceAsStream(CONFIG_FILE)) {
             if (in != null) {
                 PROPS.load(in);
-                log.info("配置文件加载成功: {}", CONFIG_FILE);
-            } else {
-                log.info("未找到配置文件 {}，将使用环境变量和内置默认值", CONFIG_FILE);
+                log.info("classpath 配置文件加载成功: {}", CONFIG_FILE);
             }
         } catch (IOException e) {
-            log.error("加载配置文件失败", e);
+            log.error("加载 classpath 配置文件失败", e);
         }
+        loadExternalConfig();
     }
 
+    /**
+     * 加载容器外部配置文件。可通过 KBTX_CONFIG_FILE 指定路径；
+     * Docker 默认读取 /app/config/db.properties。
+     */
+    private static void loadExternalConfig() {
+        String configured = System.getProperty("kaibotixing.config.file");
+        if (configured == null || configured.isBlank()) {
+            configured = System.getenv("KBTX_CONFIG_FILE");
+        }
+        Path path = (configured == null || configured.isBlank())
+                ? Path.of("config", "db.properties")
+                : Path.of(configured);
+        if (!Files.isRegularFile(path)) {
+            log.info("未找到外部配置文件 {}，将使用 classpath、环境变量和内置默认值", path);
+            return;
+        }
+        try (InputStream in = Files.newInputStream(path)) {
+            PROPS.load(in);
+            log.info("外部配置文件加载成功: {}", path.toAbsolutePath());
+        } catch (IOException e) {
+            log.error("加载外部配置文件失败: {}", path, e);
+        }
+    }
     private ConfigUtil() {
     }
 
