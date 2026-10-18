@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: Versioned image tag to publish, for example 1.0.9-umbrel
+        description: Versioned image tag to publish, for example 1.0.10-umbrel
         required: true
-        default: 1.0.9-umbrel
+        default: 1.0.10-umbrel
         type: string
 
 permissions:

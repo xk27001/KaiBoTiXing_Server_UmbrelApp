@@ -2,7 +2,7 @@ version: "3.7"
 
 services:
   app:
-    image: ${KBTX_IMAGE:-ghcr.io/xk27001/kai-bo-ti-xing:1.0.9-umbrel@sha256:190881432856552cc93f41e66b3de6295f138f1a83293296f849871798a61808}
+    image: ${KBTX_IMAGE:-ghcr.io/xk27001/kai-bo-ti-xing:1.0.10-umbrel}
     init: true
     restart: on-failure
     ports:

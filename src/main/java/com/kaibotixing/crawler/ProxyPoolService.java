@@ -25,6 +25,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
@@ -111,16 +112,35 @@ public class ProxyPoolService {
     private final java.util.concurrent.atomic.AtomicBoolean refreshPending = new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private volatile ScheduledExecutorService scheduler;
+    private volatile ExecutorService refreshExecutor;
     private volatile ScheduledFuture<?> refreshFuture;
-    private volatile ThreadPoolExecutor workerPool;
+    private volatile Future<?> activeRefreshFuture;
+    private volatile ThreadPoolExecutor activeRoundWorkerPool;
     private volatile LocalDateTime lastRefresh;
     private volatile int lastCandidateCount;
+    private final java.util.concurrent.atomic.AtomicLong refreshGeneration =
+            new java.util.concurrent.atomic.AtomicLong();
+    private volatile long refreshStartedNanos;
+    private final long refreshWatchdogTimeoutMillisOverride;
+
+    /** 实际执行刷新动作；测试可注入不会访问网络的替代实现。 */
+    private final Runnable refreshAction;
 
     /** 代理池状态快照，供 UI 展示 */
     public record ProxyStatus(boolean enabled, int available, int candidateCount, LocalDateTime lastRefresh) {
     }
 
     public ProxyPoolService() {
+        this(null, 0);
+    }
+
+    /** 测试用构造：允许注入刷新动作，生命周期与调度逻辑保持真实。 */
+    ProxyPoolService(Runnable refreshAction) {
+        this(refreshAction, 0);
+    }
+
+    /** 测试用构造：可缩短看门狗时间，验证卡死后的自动恢复。 */
+    ProxyPoolService(Runnable refreshAction, long watchdogTimeoutMillis) {
         this.enabled = ConfigUtil.getBoolean("crawler.proxy.enabled", true);
         List<String> configuredSources = parseList(ConfigUtil.get("crawler.proxy.sources", ""));
         this.sources = configuredSources.isEmpty() ? parseList(DEFAULT_SOURCES) : configuredSources;
@@ -142,6 +162,8 @@ public class ProxyPoolService {
                 .connectTimeout(Duration.ofSeconds(fetchTimeoutSeconds))
                 .followRedirects(HttpClient.Redirect.ALWAYS)
                 .build();
+        this.refreshAction = refreshAction != null ? refreshAction : this::refresh;
+        this.refreshWatchdogTimeoutMillisOverride = Math.max(0, watchdogTimeoutMillis);
     }
 
     /** 当前每轮采样验证条数。 */
@@ -159,20 +181,9 @@ public class ProxyPoolService {
         return parallelism;
     }
 
-    /** 更新代理验证并发数，并动态调整正在运行的线程池。 */
+    /** 更新代理验证并发数，下一轮刷新立即生效。 */
     public void setParallelism(int count) {
-        int safe = clampParallelism(count);
-        this.parallelism = safe;
-        ThreadPoolExecutor pool = workerPool;
-        if (pool != null && !pool.isShutdown()) {
-            if (safe > pool.getMaximumPoolSize()) {
-                pool.setMaximumPoolSize(safe);
-                pool.setCorePoolSize(safe);
-            } else {
-                pool.setCorePoolSize(safe);
-                pool.setMaximumPoolSize(safe);
-            }
-        }
+        this.parallelism = clampParallelism(count);
     }
 
     /** 当前代理池自动刷新间隔（分钟）。 */
@@ -185,7 +196,7 @@ public class ProxyPoolService {
         this.refreshMinutes = clampRefreshMinutes(minutes);
         ScheduledExecutorService currentScheduler = scheduler;
         if (currentScheduler != null && !currentScheduler.isShutdown()) {
-            schedulePeriodicRefresh();
+            schedulePeriodicRefresh(TimeUnit.MINUTES.toMillis(refreshMinutes));
         }
     }
 
@@ -193,7 +204,11 @@ public class ProxyPoolService {
         return Math.max(1, Math.min(minutes, 1_440));
     }
 
-    private synchronized void schedulePeriodicRefresh() {
+    /**
+     * 仅使用调度线程触发刷新，实际刷新在独立线程执行。
+     * 这样单轮刷新异常或卡住时，周期触发器仍存活，后续刷新不会被永久终止。
+     */
+    private synchronized void schedulePeriodicRefresh(long intervalMillis) {
         ScheduledExecutorService currentScheduler = scheduler;
         if (currentScheduler == null || currentScheduler.isShutdown()) {
             return;
@@ -201,10 +216,85 @@ public class ProxyPoolService {
         if (refreshFuture != null) {
             refreshFuture.cancel(false);
         }
-        refreshFuture = currentScheduler.scheduleWithFixedDelay(
-                this::refresh, refreshMinutes, refreshMinutes, TimeUnit.MINUTES);
-        addEvent("自动刷新计划已更新：每 %d 分钟执行一次", refreshMinutes);
+        long safeIntervalMillis = Math.max(1, intervalMillis);
+        try {
+            refreshFuture = currentScheduler.scheduleAtFixedRate(
+                    this::runScheduledRefresh,
+                    safeIntervalMillis, safeIntervalMillis, TimeUnit.MILLISECONDS);
+            addEvent("自动刷新计划已更新：每 %d 分钟执行一次", refreshMinutes);
+        } catch (RuntimeException e) {
+            log.warn("代理池自动刷新计划设置失败: {}", e.getMessage());
+        }
     }
+
+    /** 周期触发任务永不向外抛异常，并负责从卡死的刷新轮次中自动恢复。 */
+    private void runScheduledRefresh() {
+        try {
+            if (recoverStuckRefresh()) {
+                return;
+            }
+            submitRefresh("自动");
+        } catch (Throwable t) {
+            log.error("代理池自动刷新触发异常", t);
+        }
+    }
+
+    /** 单轮刷新超过预期耗时后，取消旧轮次并替换刷新线程，确保自动刷新继续运行。 */
+    private synchronized boolean recoverStuckRefresh() {
+        if (!refreshPending.get() || !refreshTimedOut()) {
+            return false;
+        }
+        long stalledMillis = TimeUnit.NANOSECONDS.toMillis(
+                System.nanoTime() - refreshStartedNanos);
+        refreshGeneration.incrementAndGet();
+        refreshPending.set(false);
+
+        Future<?> currentRefresh = activeRefreshFuture;
+        if (currentRefresh != null) {
+            currentRefresh.cancel(true);
+        }
+        ThreadPoolExecutor currentRoundPool = activeRoundWorkerPool;
+        if (currentRoundPool != null) {
+            currentRoundPool.shutdownNow();
+        }
+        ExecutorService oldExecutor = refreshExecutor;
+        refreshExecutor = newRefreshExecutor();
+        if (oldExecutor != null) {
+            oldExecutor.shutdownNow();
+        }
+        log.error("代理池刷新超过 {}ms 仍未结束，已自动取消并重新调度", stalledMillis);
+        addEvent("刷新卡住超过 %dms，已自动恢复并重新调度", stalledMillis);
+        submitRefresh("自动恢复");
+        return true;
+    }
+
+    private boolean refreshTimedOut() {
+        long started = refreshStartedNanos;
+        if (started == 0) {
+            return false;
+        }
+        long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+        return elapsedMillis >= refreshWatchdogTimeoutMillis();
+    }
+
+    private long refreshWatchdogTimeoutMillis() {
+        if (refreshWatchdogTimeoutMillisOverride > 0) {
+            return refreshWatchdogTimeoutMillisOverride;
+        }
+        long perTaskTimeoutMs = (long) validateTimeoutSeconds * 2 * 1000L + 1000L;
+        long batches = ((long) validateSampleCount + parallelism - 1L) / parallelism;
+        long estimatedMillis = batches * perTaskTimeoutMs + (long) fetchTimeoutSeconds * 1000L;
+        return Math.max(TimeUnit.MINUTES.toMillis(10), estimatedMillis * 2L);
+    }
+
+    private ExecutorService newRefreshExecutor() {
+        return Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "proxy-pool-refresh");
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
     private static int clampParallelism(int count) {
         return Math.max(1, Math.min(count, 1_000));
     }
@@ -263,6 +353,15 @@ public class ProxyPoolService {
      * 代理未启用或已启动时幂等。
      */
     public void start() {
+        start(TimeUnit.MINUTES.toMillis(refreshMinutes));
+    }
+
+    /** 测试用：以毫秒级间隔启动真实调度链。 */
+    void startForTest(long intervalMillis) {
+        start(intervalMillis);
+    }
+
+    private synchronized void start(long intervalMillis) {
         if (!enabled) {
             log.info("代理池未启用（crawler.proxy.enabled=false），爬取将使用直连");
             return;
@@ -271,29 +370,83 @@ public class ProxyPoolService {
             return;
         }
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "proxy-pool-refresh");
+            Thread t = new Thread(r, "proxy-pool-scheduler");
             t.setDaemon(true);
             return t;
         });
-        workerPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(parallelism, r -> {
-            Thread t = new Thread(r, "proxy-worker");
-            t.setDaemon(true);
-            return t;
-        });
-        scheduler.execute(this::refresh);
-        schedulePeriodicRefresh();
+        refreshExecutor = newRefreshExecutor();
+
+        submitRefresh("首轮");
+        schedulePeriodicRefresh(intervalMillis);
         log.info("代理池已启动：{} 个数据源、{} 个镜像前缀，刷新间隔 {} 分钟，验证目标 {}（备选 {}）",
                 sources.size(), mirrorPrefixes.size(), refreshMinutes, validateUrl, validateUrlBackup);
         addEvent("代理池已启动：%d 个数据源、%d 个镜像前缀，刷新间隔 %d 分钟，验证目标 %s（备选 %s）",
                 sources.size(), mirrorPrefixes.size(), refreshMinutes, validateUrl, validateUrlBackup);
-        addEvent("已提交首轮刷新任务");
+    }
+
+    /**
+     * 提交一轮刷新。所有入口共用 refreshPending，确保任何时刻最多一轮刷新。
+     * 提交成功后由 runRefreshSafely 在 finally 中释放标记。
+     */
+    private synchronized boolean submitRefresh(String trigger) {
+        if (!refreshPending.compareAndSet(false, true)) {
+            addEvent("%s刷新已跳过：上一轮刷新仍在进行", trigger);
+            return false;
+        }
+        ExecutorService currentExecutor = refreshExecutor;
+        if (currentExecutor == null || currentExecutor.isShutdown()) {
+            refreshPending.set(false);
+            addEvent("%s刷新已跳过：代理池已关闭", trigger);
+            return false;
+        }
+        long generation = refreshGeneration.incrementAndGet();
+        refreshStartedNanos = System.nanoTime();
+        addEvent("%s触发刷新", trigger);
+        try {
+            activeRefreshFuture = currentExecutor.submit(() -> runRefreshSafely(generation));
+            return true;
+        } catch (RuntimeException e) {
+            refreshPending.set(false);
+            activeRefreshFuture = null;
+            refreshStartedNanos = 0;
+            log.warn("{}刷新提交失败: {}", trigger, e.getMessage());
+            addEvent("%s刷新提交失败：%s", trigger, e.getMessage());
+            return false;
+        }
+    }
+
+    /** 隔离单轮刷新的所有异常，保证刷新标记被释放且后台线程可继续接收任务。 */
+    private void runRefreshSafely(long generation) {
+        try {
+            refreshAction.run();
+        } catch (Throwable t) {
+            log.error("代理池刷新异常", t);
+            addEvent("刷新异常：%s", t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName());
+        } finally {
+            if (refreshGeneration.get() == generation) {
+                refreshPending.set(false);
+                activeRefreshFuture = null;
+                refreshStartedNanos = 0;
+            }
+        }
+    }
+
+    /** 为每一轮刷新创建独立线程池，避免上一轮超时任务阻塞后续轮次。 */
+    private ThreadPoolExecutor newRoundWorkerPool() {
+        return (ThreadPoolExecutor) Executors.newFixedThreadPool(parallelism, r -> {
+            Thread t = new Thread(r, "proxy-worker");
+            t.setDaemon(true);
+            return t;
+        });
     }
 
     /** 拉取并验证一轮代理，更新可用池。 */
     private void refresh() {
+        ThreadPoolExecutor roundWorkerPool = newRoundWorkerPool();
+        activeRoundWorkerPool = roundWorkerPool;
         try {
             addEvent("开始刷新：拉取 %d 个数据源…", sources.size());
-            Set<String> rawSet = fetchAllCandidates();
+            Set<String> rawSet = fetchAllCandidates(roundWorkerPool);
             lastCandidateCount = rawSet.size();
             if (rawSet.isEmpty()) {
                 log.warn("本轮所有数据源（含镜像）均拉取失败，保留现有代理池（{} 个）。"
@@ -333,7 +486,7 @@ public class ProxyPoolService {
             long perTaskTimeoutMs = (long) validateTimeoutSeconds * 2 * 1000L + 1000L;
             List<Future<Boolean>> futures = new ArrayList<>(toValidate.size());
             for (Proxy p : toValidate) {
-                futures.add(workerPool.submit(() -> validate(p)));
+                futures.add(roundWorkerPool.submit(() -> validate(p)));
             }
             for (int i = 0; i < toValidate.size(); i++) {
                 Proxy p = toValidate.get(i);
@@ -375,11 +528,11 @@ public class ProxyPoolService {
             if (kept.isEmpty()) {
                 addEvent("提示：本批验证均失败，可等待下轮自动刷新，或调整 validate.timeout.seconds / sample.factor / sources");
             }
-        } catch (Exception e) {
-            log.warn("代理池刷新异常: {}", e.getMessage());
-            addEvent("刷新异常：%s", e.getMessage());
         } finally {
-            refreshPending.set(false);
+            if (activeRoundWorkerPool == roundWorkerPool) {
+                activeRoundWorkerPool = null;
+            }
+            roundWorkerPool.shutdownNow();
         }
     }
 
@@ -387,7 +540,7 @@ public class ProxyPoolService {
      * 并行拉取所有数据源的候选 URL（原始 + 各镜像前缀 + jsDelivr），解析去重返回 ip:port 集合。
      * 直连 GitHub raw 命中率低且慢，给予更短超时，避免拖慢整体。
      */
-    private Set<String> fetchAllCandidates() {
+    private Set<String> fetchAllCandidates(ThreadPoolExecutor roundWorkerPool) {
         List<String> urls = new ArrayList<>();
         for (String source : sources) {
             List<String> candidates = new ArrayList<>();
@@ -441,7 +594,7 @@ public class ProxyPoolService {
             });
         }
         try {
-            workerPool.invokeAll(tasks);
+            roundWorkerPool.invokeAll(tasks);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -647,17 +800,13 @@ public class ProxyPoolService {
             addEvent("手动刷新被忽略：代理池未启用");
             return false;
         }
-        if (scheduler == null || scheduler.isShutdown()) {
+        ExecutorService currentExecutor = refreshExecutor;
+        if (scheduler == null || scheduler.isShutdown()
+                || currentExecutor == null || currentExecutor.isShutdown()) {
             addEvent("手动刷新被忽略：代理池已关闭");
             return false;
         }
-        if (!refreshPending.compareAndSet(false, true)) {
-            addEvent("手动刷新被忽略：上一轮刷新仍在进行");
-            return false;
-        }
-        addEvent("手动触发刷新");
-        scheduler.execute(this::refresh);
-        return true;
+        return submitRefresh("手动");
     }
 
     /** 追加一条处理过程事件（环形缓冲，超出上限丢弃最旧）。 */
@@ -670,13 +819,30 @@ public class ProxyPoolService {
     }
 
     /** 释放所有后台线程与缓存连接。 */
-    public void shutdown() {
+    public synchronized void shutdown() {
+        refreshGeneration.incrementAndGet();
+        refreshPending.set(false);
+        refreshStartedNanos = 0;
+        if (refreshFuture != null) {
+            refreshFuture.cancel(false);
+        }
+        Future<?> currentRefresh = activeRefreshFuture;
+        if (currentRefresh != null) {
+            currentRefresh.cancel(true);
+        }
+        activeRefreshFuture = null;
+        ThreadPoolExecutor currentRoundPool = activeRoundWorkerPool;
+        if (currentRoundPool != null) {
+            currentRoundPool.shutdownNow();
+        }
+        activeRoundWorkerPool = null;
         if (scheduler != null) {
             scheduler.shutdownNow();
         }
-        if (workerPool != null) {
-            workerPool.shutdownNow();
+        if (refreshExecutor != null) {
+            refreshExecutor.shutdownNow();
         }
+
         available.clear();
         proxyClients.clear();
         usageCount.clear();

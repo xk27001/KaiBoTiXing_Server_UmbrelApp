@@ -4,7 +4,7 @@ storage:
   dataRoot: data
 category: automation
 name: 开播监控
-version: "1.0.9-umbrel"
+version: "1.0.10-umbrel"
 tagline: 自托管监控抖音主播开播状态
 description: >-
   KaiBoTiXing 是一个自托管的抖音主播开播监控服务。它按设定的时间间隔并发检查主播直播状态，
@@ -17,8 +17,8 @@ description: >-
 
   Umbrel 登录会保护 Web 控制台，应用本身不创建额外账号。
 releaseNotes: >-
-  1.0.9：统一为阿里云 RDS MySQL 外部数据库部署；修正 Umbrel 清单和 Compose 格式；
-  固定 GHCR 镜像摘要；补齐持久化目录并更新安装、升级和备份文档。
+  1.0.10：修复代理池多轮自动刷新后停止的问题；刷新异常或卡死时自动恢复，
+  每轮验证使用独立线程池，并补充回归测试。
 developer: ren-daguo
 website: https://github.com/xk27001/KaiBoTiXing_Server_UmbrelApp
 dependencies: []

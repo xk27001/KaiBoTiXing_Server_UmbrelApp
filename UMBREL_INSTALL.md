@@ -180,7 +180,7 @@ cd KaiBoTiXing_Server_UmbrelApp
 
 ```bash
 cat > .env <<'EOF'
-KBTX_IMAGE=ghcr.io/xk27001/kai-bo-ti-xing:1.0.9-umbrel
+KBTX_IMAGE=ghcr.io/xk27001/kai-bo-ti-xing:1.0.10-umbrel
 KBTX_HTTP_PORT=8080
 KBTX_DB_HOST=rm-xxxxxxxxxxxx.mysql.rds.aliyuncs.com
 KBTX_DB_PORT=3306

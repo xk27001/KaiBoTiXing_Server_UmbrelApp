@@ -71,7 +71,7 @@ mvn javafx:run
 运行无界面 Web 服务端：
 
 ```bash
-java -cp target/KaiBoTiXing-1.0.9-fat.jar com.kaibotixing.server.ServerLauncher
+java -cp target/KaiBoTiXing-1.0.10-fat.jar com.kaibotixing.server.ServerLauncher
 ```
 
 打包 Windows 免安装版本：
@@ -102,10 +102,10 @@ kaibotixing-server/
 镜像由 GitHub Actions 工作流 `Build Umbrel image` 构建并推送到 GHCR：
 
 ```text
-ghcr.io/xk27001/kai-bo-ti-xing:1.0.9-umbrel
+ghcr.io/xk27001/kai-bo-ti-xing:1.0.10-umbrel
 ```
 
-在 GitHub Actions 中手动运行该工作流，`image_tag` 填写 `1.0.9-umbrel`。工作流会构建 `linux/amd64` 和 `linux/arm64` 两个平台。首次发布后，请在 GitHub Packages 中把镜像可见性设为 Public。
+在 GitHub Actions 中手动运行该工作流，`image_tag` 填写 `1.0.10-umbrel`。工作流会构建 `linux/amd64` 和 `linux/arm64` 两个平台。首次发布后，请在 GitHub Packages 中把镜像可见性设为 Public。
 
 Compose 中的正式运行镜像使用 `tag@sha256:digest` 固定版本，避免上游 tag 被覆盖后安装内容漂移。
 
@@ -153,7 +153,7 @@ chmod 600 ~/umbrel/app-data/kaibotixing-server/data/config/db.properties
 `docker-compose.standalone.yml` 同样使用阿里云 RDS，不再启动本地 MySQL 容器。创建 `.env`：
 
 ```dotenv
-KBTX_IMAGE=ghcr.io/xk27001/kai-bo-ti-xing:1.0.9-umbrel
+KBTX_IMAGE=ghcr.io/xk27001/kai-bo-ti-xing:1.0.10-umbrel
 KBTX_HTTP_PORT=8080
 KBTX_DB_HOST=rm-xxxxxxxxxxxx.mysql.rds.aliyuncs.com
 KBTX_DB_PORT=3306
