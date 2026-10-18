@@ -8,7 +8,7 @@ services:
       PROXY_AUTH_ADD: "true"
 
   app:
-    image: ghcr.io/xk27001/kai-bo-ti-xing:1.0.10-umbrel
+    image: ghcr.io/xk27001/kai-bo-ti-xing:1.0.10-umbrel@sha256:9177e3fe544cba487ebfd14f821b825af07f61ee8ca43347c19ac9789409ddb9
     init: true
     restart: on-failure
     user: "1000:1000"
